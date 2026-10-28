@@ -1,9 +1,9 @@
 import { card, isBonus, monthOf } from '../engine/cards';
 import { chooseAction } from '../engine/ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, newRound, PlayerIndex, RoundResult, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, newRound, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
 } from '../engine/game';
-import { COMBO_LABEL, comboProgress, score } from '../engine/scoring';
+import { COMBO_LABEL, comboProgress } from '../engine/scoring';
 import {
   applyResult, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, pointRate, Profile, saveProfile, Settlement,
 } from '../engine/economy';
@@ -183,6 +183,20 @@ export class App {
         continue;
       }
       // 내 차례
+      if (s.phase === 'gukjin') {
+        const o = gukjinOptions(s, 0);
+        const res = await this.dialog(
+          '국진 전환',
+          `<div class="gukjin-pick">${cardSvg(GUKJIN)}</div>` +
+            `<p style="text-align:center">9월 술잔(국진)을 <b>쌍피</b>로 옮길까요?<br>` +
+            `열끗으로 두면 <b>${o.yeol}점</b>, 쌍피로 옮기면 <b>${o.pi}점</b>입니다.<br>` +
+            `<small>쌍피로 옮기면 이번 판이 끝날 때까지 되돌릴 수 없습니다.</small></p>`,
+          [{ label: `쌍피로 전환 (${o.pi}점)`, value: 'pi', cls: 'red' }, { label: `열끗 유지 (${o.yeol}점)`, value: 'yeol' }],
+        );
+        if (myGen !== this.gen) return;
+        await this.apply({ type: 'gukjin', toPi: res === 'pi' }, myGen);
+        continue;
+      }
       if (s.phase === 'goStop') {
         const sc = currentScore(s, 0);
         const p = s.players[0];
@@ -395,6 +409,9 @@ export class App {
           wait = Math.max(wait, 500);
           break;
         case 'combo': await delay(250); sfx.combo(); this.banner(COMBO_LABEL[e.combo], side(e.player), undefined, 'combo'); wait = Math.max(wait, 1200); break;
+        case 'gukjin':
+          if (e.toPi) { sfx.special(); this.banner('국진 → 쌍피', side(e.player), [GUKJIN], undefined, '9월 술잔을 쌍피로 전환'); wait = Math.max(wait, 1200); }
+          break;
         case 'go': sfx.go(e.count); this.banner(`${e.count}고!`, side(e.player), undefined, 'red'); wait = Math.max(wait, 1100); break;
         case 'stop': sfx.stop(); this.banner('스톱!', side(e.player), undefined, undefined, e.auto ? '마지막 패 · 자동 스톱' : undefined); wait = Math.max(wait, 1200); break;
         case 'chongtong': sfx.combo(); this.banner('총통!', side(e.player), s.players[e.player].hand.filter((c) => monthOf(c) === e.month), 'combo'); wait = Math.max(wait, 1600); break;
@@ -529,7 +546,7 @@ export class App {
     // 먹은 패
     for (const p of [0, 1] as const) {
       const caps = s.players[p].captured;
-      const d = score(caps);
+      const d = playerScore(s.players[p]);
       const groups: Record<'gwang' | 'yeol' | 'tti' | 'pi', number[]> = { gwang: [], yeol: [], tti: [], pi: [] };
       for (const id of caps) {
         const c = card(id);
@@ -693,7 +710,7 @@ export class App {
         <h3>점수</h3><ul><li>광: 3광 3점(비광 포함 2점), 4광 4점, 5광 15점</li>
         <li>열끗·띠 5장 1점, 피 10장 1점 (이후 1장마다 +1)</li>
         <li>고도리 5점, 홍단·청단·초단 각 3점</li>
-        <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 국진(9월 열끗)은 유리한 쪽으로 자동 계산</li></ul>
+        <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
         <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
         <li>흔들기·폭탄: 점수 ×2 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
         <li>1고 +1, 2고 +2, 3고부터 ×2씩</li>

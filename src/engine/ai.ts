@@ -1,5 +1,5 @@
 import { card, monthOf, TOTAL_CARDS } from './cards';
-import { Action, canShake, currentScore, Frame, GameState, legalActions, PlayerIndex, step, WIN_SCORE } from './game';
+import { Action, canShake, currentScore, Frame, GameState, gukjinOptions, legalActions, PlayerIndex, settle, step, WIN_SCORE } from './game';
 import { score } from './scoring';
 
 const GODORI = [4, 12, 29]; // 2·4·8월 새
@@ -37,7 +37,7 @@ function evaluate(s: GameState, me: PlayerIndex): number {
   const mine = s.players[me].captured;
   const theirs = s.players[opp].captured;
   let v = potential(mine, theirs) - potential(theirs, mine) * 0.9;
-  if (s.phase === 'goStop' && s.current === me) v += 50;
+  if ((s.phase === 'goStop' || s.phase === 'gukjin') && s.current === me) v += 50;
   return v;
 }
 
@@ -127,9 +127,24 @@ function decideGoStop(s: GameState): boolean {
   return true;
 }
 
+/** 국진을 쌍피로 바꿀지: 지금 스톱했을 때 받을 금액(점수)이 큰 쪽, 같으면 점수가 큰 쪽 */
+export function decideGukjin(s: GameState): boolean {
+  const me = s.current;
+  const o = gukjinOptions(s, me);
+  const value = (toPi: boolean) => {
+    const t = structuredClone(s);
+    t.players[me].gukjinPi = toPi;
+    return (toPi ? o.pi : o.yeol) >= WIN_SCORE ? settle(t, me).final : 0;
+  };
+  const yeol = value(false), pi = value(true);
+  if (pi !== yeol) return pi > yeol;
+  return o.pi > o.yeol;
+}
+
 export function chooseAction(s: GameState): Action {
   const me = s.current;
   if (s.phase === 'chooseFloor') return { type: 'choose', card: bestFloorChoice(s) };
+  if (s.phase === 'gukjin') return { type: 'gukjin', toPi: decideGukjin(s) };
   if (s.phase === 'goStop') return { type: 'goStop', go: decideGoStop(s) };
   const acts = legalActions(s);
   const bonus = acts.find((a) => a.type === 'play' && card(a.card).bonus);

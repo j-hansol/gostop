@@ -69,14 +69,9 @@ function scoreWith(ids: number[], gukjinAsPi: boolean): ScoreDetail {
   };
 }
 
-/** 국진을 열끗/쌍피 중 점수가 높은 쪽으로 자동 선택한다. */
-export function score(ids: number[]): ScoreDetail {
-  const asYeol = scoreWith(ids, false);
-  if (!ids.some((id) => card(id).gukjin)) return asYeol;
-  const asPi = scoreWith(ids, true);
-  if (asPi.total !== asYeol.total) return asPi.total > asYeol.total ? asPi : asYeol;
-  // 동점이면 피박을 피하기 쉬운 쌍피 쪽
-  return asPi;
+/** 국진(9월 술잔)은 기본 열끗으로 세고, 쌍피로 전환한 경우에만 쌍피로 센다. */
+export function score(ids: number[], gukjinAsPi = false): ScoreDetail {
+  return scoreWith(ids, gukjinAsPi && ids.some((id) => card(id).gukjin));
 }
 
 /** 피박 판정용: 국진을 피로 셀 수 있으면 센다. */

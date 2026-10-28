@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { CARDS, TOTAL_CARDS } from '../src/engine/cards';
+import { CARDS, monthOf, TOTAL_CARDS } from '../src/engine/cards';
 import { score } from '../src/engine/scoring';
-import { Action, cardLocations, Frame, GameState, goAdjusted, legalActions, newRound, PlayerIndex, settle, step } from '../src/engine/game';
+import { Action, cardLocations, currentScore, Frame, GameState, goAdjusted, legalActions, newRound, PlayerIndex, settle, step } from '../src/engine/game';
 import { chooseAction } from '../src/engine/ai';
 import { applyResult, createAi, newProfile, pointRate } from '../src/engine/economy';
 
@@ -67,9 +67,10 @@ describe('scoring', () => {
     expect(score([...plain, 48]).total).toBe(1);
     expect(score([...plain, 50]).total).toBe(2);
   });
-  it('국진은 유리한 쪽으로', () => {
+  it('국진은 기본 열끗, 전환 시 쌍피', () => {
     const plain = ids((c) => c.kind === 'pi' && c.piValue === 1).slice(0, 8);
-    expect(score([...plain, 32]).total).toBe(1);
+    expect(score([...plain, 32]).total).toBe(0);
+    expect(score([...plain, 32], true).total).toBe(1);
     expect(score([4, 12, 16, 20, 24, 32]).yeolCount).toBe(6);
   });
   it('고 보너스', () => {
@@ -158,5 +159,34 @@ describe('comboProgress', () => {
     expect(by.cheongdan).toBeUndefined(); // 상대가 33을 가져가 막힘
     expect(by.gwang).toBe('likely');
     expect(comboProgress([0, 8], [28, 40, 44]).find((c) => c.key === 'gwang')).toBeUndefined();
+  });
+});
+
+describe('국진 전환', () => {
+  it('쌍피로 바꿔 7점이 되면 전환 단계로 들어가고, 승인하면 쌍피로 센다', async () => {
+    const { GUKJIN } = await import('../src/engine/game');
+    const plain = CARDS.filter((c) => c.kind === 'pi' && c.piValue === 1).map((c) => c.id).filter((id) => monthOf(id) !== 1);
+    let s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(11) }));
+    // 내 손패 1월 한 장과 바닥 1월 한 장을 맞추도록 꾸민다
+    const p = s.players[0];
+    const others = cardLocations(s).filter((id) => id !== 0 && id !== 1 && id !== GUKJIN && !plain.slice(0, 14).includes(id));
+    p.captured = [GUKJIN, ...plain.slice(0, 14)]; // 피 14장 = 5점, 국진 쌍피면 16장 = 7점
+    s.players[1].captured = [];
+    p.hand = [0, ...others.slice(0, 5)];
+    s.players[1].hand = others.slice(5, 10);
+    s.floor = [1];
+    s.deck = others.slice(10);
+    s.ppeokOwner = {};
+    expect(currentScore(s, 0)).toBe(5);
+    s = last(step(s, { type: 'play', card: 0 }));
+    if (s.phase === 'chooseFloor') s = last(step(s, legalActions(s)[0]));
+    expect(s.phase).toBe('gukjin');
+    const yes = last(step(s, { type: 'gukjin', toPi: true }));
+    expect(yes.players[0].gukjinPi).toBe(true);
+    expect(currentScore(yes, 0)).toBeGreaterThanOrEqual(7);
+    expect(['goStop', 'end']).toContain(yes.phase);
+    const no = last(step(s, { type: 'gukjin', toPi: false }));
+    expect(no.players[0].gukjinPi).toBe(false);
+    expect(no.phase).toBe('play');
   });
 });

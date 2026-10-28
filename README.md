@@ -8,7 +8,7 @@ AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RU
 npm install
 npm run dev      # http://localhost:5173
 npm test         # 규칙 엔진 테스트
-npm run build    # dist/ 에 배포용 정적 파일 생성
+npm run build    # dist/ 에 배포용 정적 파일 생성 (dist/index.html 을 더블클릭해 바로 실행 가능)
 npm run sim 600  # AI 대 단순 탐욕 정책 대전 시뮬레이션
 ```
 

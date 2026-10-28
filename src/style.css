@@ -374,3 +374,7 @@ table.breakdown tr.total td { font-size: 17px; color: var(--gold); border-bottom
   .hand { gap: 3px; }
   .floor { --cols: 2; --rows: 2; --cell-w: calc(var(--cw) * 1.7); --cell-h: calc(var(--ch) + 10px); }
 }
+
+/* 국진 전환 확인 */
+.gukjin-pick { width: 72px; height: 115px; margin: 4px auto 10px; border-radius: 6px; overflow: hidden; box-shadow: 0 4px 14px rgba(0, 0, 0, .5); }
+.gukjin-pick img, .gukjin-pick svg { width: 100%; height: 100%; display: block; }

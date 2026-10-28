@@ -19,9 +19,13 @@ export interface PlayerState {
   bombs: number;
   ppeokStreak: number;
   turnsTaken: number;
+  /** 국진(9월 술잔)을 쌍피로 전환했는지. 기본은 열끗 */
+  gukjinPi: boolean;
+  /** 이번 턴에 국진 전환을 이미 물어봤는지 (거절 시 같은 턴에 다시 묻지 않음) */
+  gukjinAskedTurn: number;
 }
 
-export type Phase = 'play' | 'chooseFloor' | 'goStop' | 'end';
+export type Phase = 'play' | 'chooseFloor' | 'gukjin' | 'goStop' | 'end';
 
 export interface TurnCtx {
   played: number | null;
@@ -84,6 +88,7 @@ export type GameEvent =
   | { type: 'steal'; player: PlayerIndex; cards: number[] }
   | { type: 'combo'; player: PlayerIndex; combo: Combo }
   | { type: 'scoreReady'; player: PlayerIndex; score: number }
+  | { type: 'gukjin'; player: PlayerIndex; toPi: boolean }
   | { type: 'go'; player: PlayerIndex; count: number }
   | { type: 'stop'; player: PlayerIndex; auto: boolean }
   | { type: 'chongtong'; player: PlayerIndex; month: number }
@@ -101,6 +106,7 @@ export type Action =
   | { type: 'bomb'; month: number }
   | { type: 'dummy' }
   | { type: 'choose'; card: number }
+  | { type: 'gukjin'; toPi: boolean }
   | { type: 'goStop'; go: boolean };
 
 export type Rng = () => number;
@@ -108,7 +114,7 @@ export type Rng = () => number;
 const clone = <T>(v: T): T => structuredClone(v);
 
 function newPlayer(): PlayerState {
-  return { hand: [], dummies: 0, captured: [], goCount: 0, lastGoScore: 0, shakes: 0, bombs: 0, ppeokStreak: 0, turnsTaken: 0 };
+  return { hand: [], dummies: 0, captured: [], goCount: 0, lastGoScore: 0, shakes: 0, bombs: 0, ppeokStreak: 0, turnsTaken: 0, gukjinPi: false, gukjinAskedTurn: -1 };
 }
 
 export function shuffle(ids: number[], rng: Rng): number[] {
@@ -208,6 +214,7 @@ export function newRound(opts: NewRoundOptions): Frame[] {
 export function legalActions(s: GameState): Action[] {
   const p = s.players[s.current];
   if (s.phase === 'chooseFloor' && s.choice) return s.choice.options.map((c) => ({ type: 'choose', card: c }));
+  if (s.phase === 'gukjin') return [{ type: 'gukjin', toPi: true }, { type: 'gukjin', toPi: false }];
   if (s.phase === 'goStop') return [{ type: 'goStop', go: true }, { type: 'goStop', go: false }];
   if (s.phase !== 'play') return [];
   const acts: Action[] = [];
@@ -237,8 +244,20 @@ function needsChoice(a: number, b: number): boolean {
   return ca.kind !== cb.kind || ca.piValue !== cb.piValue || ca.ribbon !== cb.ribbon;
 }
 
+export const GUKJIN = 32;
+
+export function playerScore(p: PlayerState, gukjinPi = p.gukjinPi): ScoreDetail {
+  return score(p.captured, gukjinPi);
+}
+
 export function currentScore(s: GameState, p: PlayerIndex): number {
-  return score(s.players[p].captured).total;
+  return playerScore(s.players[p]).total;
+}
+
+/** 국진 전환 여부를 물어볼 때 보여줄 두 점수 */
+export function gukjinOptions(s: GameState, p: PlayerIndex): { yeol: number; pi: number } {
+  const pl = s.players[p];
+  return { yeol: playerScore(pl, false).total, pi: playerScore(pl, true).total };
 }
 
 export function step(prev: GameState, action: Action): Frame[] {
@@ -255,6 +274,10 @@ export function step(prev: GameState, action: Action): Frame[] {
       if (s.phase !== 'chooseFloor' || !s.choice || !s.choice.options.includes(action.card)) throw new Error('잘못된 선택');
       doChoose(rec, action.card);
       break;
+    case 'gukjin':
+      if (s.phase !== 'gukjin') throw new Error('국진 전환 단계가 아닙니다');
+      doGukjin(rec, action.toPi);
+      break;
     case 'goStop':
       if (s.phase !== 'goStop') throw new Error('고/스톱 단계가 아닙니다');
       doGoStop(rec, action.go);
@@ -269,7 +292,7 @@ function doPlay(rec: Recorder, action: Action) {
   const p = s.players[me];
   const ctx: TurnCtx = {
     played: null, playedMonth: 0, mode: 'none', playedCaptures: [], flipped: null, flipCaptures: [],
-    steal: 0, ppeok: false, combosBefore: score(p.captured).combos,
+    steal: 0, ppeok: false, combosBefore: playerScore(p).combos,
   };
   s.ctx = ctx;
 
@@ -431,6 +454,7 @@ function stealPi(s: GameState, to: PlayerIndex, n: number): number[] {
   const taken: number[] = [];
   const rank = (id: number) => {
     const c = card(id);
+    if (c.gukjin) return from.gukjinPi ? 2 : -1;
     if (c.kind !== 'pi') return -1;
     if (c.bonus) return c.piValue === 3 ? 4 : 3;
     return c.piValue === 2 ? 2 : 1;
@@ -440,6 +464,8 @@ function stealPi(s: GameState, to: PlayerIndex, n: number): number[] {
     if (cands.length === 0) break;
     remove(from.captured, [cands[0]]);
     s.players[to].captured.push(cands[0]);
+    // 쌍피로 쓰이던 국진을 빼앗으면 받은 쪽에서도 쌍피
+    if (card(cands[0]).gukjin) { from.gukjinPi = false; s.players[to].gukjinPi = true; }
     taken.push(cands[0]);
   }
   return taken;
@@ -474,7 +500,7 @@ function finishCaptures(rec: Recorder) {
     const taken = stealPi(s, me, ctx.steal);
     if (taken.length) rec.emit({ type: 'steal', player: me, cards: taken });
   }
-  const after = score(p.captured);
+  const after = playerScore(p);
   const newCombos = after.combos.filter((c) => !ctx.combosBefore.includes(c));
   if (newCombos.length) rec.emit(...newCombos.map((combo) => ({ type: 'combo' as const, player: me, combo })));
   s.ctx = null;
@@ -485,6 +511,16 @@ function checkScore(rec: Recorder) {
   const s = rec.s;
   const me = s.current;
   const p = s.players[me];
+  // 국진을 열끗으로 두거나 쌍피로 바꿔 7점에 닿으면 전환 여부를 먼저 묻는다
+  if (p.captured.includes(GUKJIN) && !p.gukjinPi && p.gukjinAskedTurn !== p.turnsTaken) {
+    const o = gukjinOptions(s, me);
+    if (Math.max(o.yeol, o.pi) >= WIN_SCORE && Math.max(o.yeol, o.pi) > p.lastGoScore) {
+      p.gukjinAskedTurn = p.turnsTaken;
+      s.phase = 'gukjin';
+      rec.emit();
+      return;
+    }
+  }
   const sc = currentScore(s, me);
   if (sc >= WIN_SCORE && sc > p.lastGoScore) {
     if (s.deck.length === 0 || !hasCards(p)) {
@@ -497,6 +533,15 @@ function checkScore(rec: Recorder) {
     return;
   }
   finishTurn(rec);
+}
+
+function doGukjin(rec: Recorder, toPi: boolean) {
+  const s = rec.s;
+  const me = s.current;
+  s.players[me].gukjinPi = toPi;
+  s.phase = 'play';
+  rec.emit({ type: 'gukjin', player: me, toPi });
+  checkScore(rec);
 }
 
 function doGoStop(rec: Recorder, go: boolean) {
@@ -550,7 +595,7 @@ export function goAdjusted(base: number, goCount: number): { value: number; text
 export function settle(s: GameState, winner: PlayerIndex): RoundResult {
   const w = s.players[winner];
   const l = s.players[other(winner)];
-  const detail = score(w.captured);
+  const detail = playerScore(w);
   const go = goAdjusted(detail.total, w.goCount);
   const multipliers: Multiplier[] = [];
   if (w.shakes) multipliers.push({ label: `흔들기${w.shakes > 1 ? ` ${w.shakes}회` : ''}`, factor: 2 ** w.shakes });
