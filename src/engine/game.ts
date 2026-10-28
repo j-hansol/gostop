@@ -190,10 +190,9 @@ export function newRound(opts: NewRoundOptions): Frame[] {
   let bonus = s.floor.find(isBonus);
   while (bonus !== undefined) {
     remove(s.floor, [bonus]);
-    players[s.dealer].captured.push(bonus);
     const refill = s.deck.shift();
     if (refill !== undefined) s.floor.push(refill);
-    rec.emit({ type: 'bonus', player: s.dealer, card: bonus });
+    takeBonus(rec, s.dealer, bonus);
     bonus = s.floor.find(isBonus);
   }
 
@@ -319,8 +318,7 @@ function doPlay(rec: Recorder, action: Action) {
     if (!p.hand.includes(c)) throw new Error('손에 없는 패');
     if (isBonus(c)) {
       remove(p.hand, [c]);
-      p.captured.push(c);
-      rec.emit({ type: 'bonus', player: me, card: c });
+      takeBonus(rec, me, c);
       const d = s.deck.shift();
       if (d !== undefined) {
         p.hand.push(d);
@@ -401,8 +399,7 @@ function doFlip(rec: Recorder) {
     f = s.deck.shift();
     if (f === undefined) break;
     if (!isBonus(f)) break;
-    p.captured.push(f);
-    rec.emit({ type: 'flip', player: me, card: f }, { type: 'bonus', player: me, card: f });
+    takeBonus(rec, me, f, { type: 'flip', player: me, card: f });
   }
   if (f === undefined) {
     finishCaptures(rec);
@@ -447,6 +444,15 @@ function doFlip(rec: Recorder) {
     takePpeok(rec, fm);
   }
   finishCaptures(rec);
+}
+
+/** 보너스패를 가져가면 상대 피를 한 장 빼앗는다 (일반 피 우선, 없으면 쌍피·쓰리피) */
+function takeBonus(rec: Recorder, to: PlayerIndex, c: number, ...before: GameEvent[]) {
+  const s = rec.s;
+  s.players[to].captured.push(c);
+  rec.emit(...before, { type: 'bonus', player: to, card: c });
+  const taken = stealPi(s, to, 1);
+  if (taken.length) rec.emit({ type: 'steal', player: to, cards: taken });
 }
 
 function stealPi(s: GameState, to: PlayerIndex, n: number): number[] {

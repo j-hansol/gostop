@@ -48,8 +48,7 @@ for (let m = 1; m <= 12; m++) {
   SPECS[m].forEach((s, i) => CARDS.push({ ...s, id: (m - 1) * 4 + i, month: m }));
 }
 CARDS.push({ id: 48, month: 0, kind: 'pi', piValue: 2, bonus: true, name: '보너스 쌍피' });
-CARDS.push({ id: 49, month: 0, kind: 'pi', piValue: 2, bonus: true, name: '보너스 쌍피' });
-CARDS.push({ id: 50, month: 0, kind: 'pi', piValue: 3, bonus: true, name: '보너스 쓰리피' });
+CARDS.push({ id: 49, month: 0, kind: 'pi', piValue: 3, bonus: true, name: '보너스 쓰리피' });
 
 export const TOTAL_CARDS = CARDS.length;
 export const card = (id: number): Card => CARDS[id];

@@ -35,14 +35,14 @@ function playGame(rng: () => number, policy: (s: GameState) => Action, dealer: P
 }
 
 describe('cards', () => {
-  it('51장, 종류별 장수', () => {
-    expect(CARDS.length).toBe(51);
+  it('50장, 종류별 장수', () => {
+    expect(CARDS.length).toBe(50);
     const count = (k: string) => CARDS.filter((c) => c.kind === k).length;
     expect(count('gwang')).toBe(5);
     expect(count('yeol')).toBe(9);
     expect(count('tti')).toBe(10);
-    expect(count('pi')).toBe(27);
-    expect(CARDS.filter((c) => c.bonus).map((c) => c.piValue)).toEqual([2, 2, 3]);
+    expect(count('pi')).toBe(26);
+    expect(CARDS.filter((c) => c.bonus).map((c) => c.piValue)).toEqual([2, 3]);
   });
 });
 
@@ -65,7 +65,7 @@ describe('scoring', () => {
     const plain = ids((c) => c.kind === 'pi' && c.piValue === 1).slice(0, 8);
     expect(score(plain).total).toBe(0);
     expect(score([...plain, 48]).total).toBe(1);
-    expect(score([...plain, 50]).total).toBe(2);
+    expect(score([...plain, 49]).total).toBe(2);
   });
   it('국진은 기본 열끗, 전환 시 쌍피', () => {
     const plain = ids((c) => c.kind === 'pi' && c.piValue === 1).slice(0, 8);
@@ -188,5 +188,34 @@ describe('국진 전환', () => {
     const no = last(step(s, { type: 'gukjin', toPi: false }));
     expect(no.players[0].gukjinPi).toBe(false);
     expect(no.phase).toBe('play');
+  });
+});
+
+describe('보너스패', () => {
+  const setup = (oppCaptured: number[]) => {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(21) }));
+    const used = new Set([48, ...oppCaptured]);
+    const rest = cardLocations(s).filter((id) => !used.has(id) && monthOf(id) !== 0);
+    s.players[0].hand = [48, ...rest.slice(0, 5)];
+    s.players[0].captured = [];
+    s.players[1].hand = rest.slice(5, 10);
+    s.players[1].captured = oppCaptured.slice();
+    s.floor = rest.slice(10, 16);
+    s.deck = rest.slice(16);
+    s.ppeokOwner = {};
+    // 1번 보너스(쓰리피)는 상대 획득 패에 없으면 더미 끝에 둔다
+    if (!oppCaptured.includes(49)) s.deck.push(49);
+    checkConservation(s);
+    return last(step(s, { type: 'play', card: 48 }));
+  };
+  it('가져가면 상대의 일반 피를 먼저 빼앗는다', () => {
+    const s = setup([2, 41, 49]); // 일반 피, 오동 쌍피, 보너스 쓰리피
+    expect(s.players[0].captured.sort((a, b) => a - b)).toEqual([2, 48]);
+    expect(s.players[1].captured.sort((a, b) => a - b)).toEqual([41, 49]);
+  });
+  it('쌍피·쓰리피만 있으면 그것을 가져온다', () => {
+    const s = setup([41]);
+    expect(s.players[0].captured.sort((a, b) => a - b)).toEqual([41, 48]);
+    expect(s.players[1].captured).toEqual([]);
   });
 });

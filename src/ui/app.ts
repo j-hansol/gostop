@@ -110,13 +110,26 @@ export class App {
     this.renderSoundBtn();
     $('btn-rules').addEventListener('click', () => void this.showRules());
     $('btn-reset').addEventListener('click', () => void this.confirmReset());
+    // 블로그 팝업 안에서 실행될 때만 닫기 버튼을 보인다
+    if ((window as { __GOSTOP_EMBED?: boolean }).__GOSTOP_EMBED) {
+      $('btn-close').classList.remove('hidden');
+      $('btn-close').addEventListener('click', () => this.requestClose());
+    }
     $('hand-0').addEventListener('click', (e) => this.onHandClick(e));
     $('floor').addEventListener('click', (e) => this.onFloorClick(e));
     document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
   }
 
   private renderSoundBtn() {
-    $('btn-sound').textContent = isMuted() ? '🔇 소리' : '🔊 소리';
+    $('btn-sound').innerHTML = `${isMuted() ? '🔇' : '🔊'}<span class="lbl"> 소리</span>`;
+  }
+
+  private requestClose() {
+    // 대화상자가 열려 있어도 확실히 물을 수 있도록 브라우저 기본 확인 창을 쓴다
+    if (this.profile.inProgress &&
+      !window.confirm(`진행 중인 판이 있습니다.
+지금 닫으면 이번 판은 기권패(${FORFEIT_POINTS}점)로 처리됩니다. 닫을까요?`)) return;
+    window.parent.postMessage({ type: 'gostop-close' }, '*');
   }
 
   private async confirmReset() {
@@ -710,7 +723,7 @@ export class App {
         <h3>점수</h3><ul><li>광: 3광 3점(비광 포함 2점), 4광 4점, 5광 15점</li>
         <li>열끗·띠 5장 1점, 피 10장 1점 (이후 1장마다 +1)</li>
         <li>고도리 5점, 홍단·청단·초단 각 3점</li>
-        <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
+        <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 보너스패를 가져가면 상대 피 1장을 빼앗습니다(일반 피 우선). 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
         <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
         <li>흔들기·폭탄: 점수 ×2 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
         <li>1고 +1, 2고 +2, 3고부터 ×2씩</li>

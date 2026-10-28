@@ -18,7 +18,7 @@
       // ?ids=0,1,2 또는 ?from=0&to=9 로 일부만 볼 수 있다
       const q = new URLSearchParams(location.search);
       const ids = q.get('ids')?.split(',').map(Number) ??
-        Array.from({ length: Number(q.get('to') ?? 50) - Number(q.get('from') ?? 0) + 1 }, (_, i) => i + Number(q.get('from') ?? 0));
+        Array.from({ length: Number(q.get('to') ?? 49) - Number(q.get('from') ?? 0) + 1 }, (_, i) => i + Number(q.get('from') ?? 0));
       if (q.get('w')) document.documentElement.style.setProperty('--w', q.get('w') + 'px');
       document.getElementById('grid').innerHTML = ids.map((i) => `<div class="c">${cardSvg(i)}</div>`).join('');
     </script>

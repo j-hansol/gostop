@@ -8,7 +8,18 @@ const BLK = '#111';
 const YEL = '#f6c51d';
 const WHT = '#fff';
 
-const cardUrl = (id: number) => `${import.meta.env.BASE_URL}cards/${id}.svg`;
+// 블로그 글에 넣은 버전은 카드 SVG를 문자열로 함께 싣는다 (tools/blog.mjs)
+const embedded = (window as { __GOSTOP_CARDS?: string[] }).__GOSTOP_CARDS;
+const blobUrls = new Map<number, string>();
+const cardUrl = (id: number) => {
+  if (!embedded?.[id]) return `${import.meta.env.BASE_URL}cards/${id}.svg`;
+  let url = blobUrls.get(id);
+  if (!url) {
+    url = URL.createObjectURL(new Blob([embedded[id]], { type: 'image/svg+xml' }));
+    blobUrls.set(id, url);
+  }
+  return url;
+};
 
 function frame(inner: string): string {
   return `<svg viewBox="0 0 120 192" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">` +
