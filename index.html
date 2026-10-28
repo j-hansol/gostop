@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>맞고</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">맞고</div>
+        <div class="meta" id="meta"></div>
+        <div class="tools">
+          <button id="btn-rules" class="ghost">규칙</button>
+          <button id="btn-sound" class="ghost"></button>
+          <button id="btn-reset" class="ghost">처음부터</button>
+        </div>
+      </header>
+
+      <section class="row row-ai">
+        <div class="panel"><div class="info" id="info-1"></div><div class="hand mini" id="hand-1"></div></div>
+        <div class="combos" id="combo-1"></div>
+        <div class="captured" id="cap-1"></div>
+      </section>
+
+      <section class="row row-table">
+        <div class="floor" id="floor">
+          <div class="slot deck" id="deck" style="--c: 0; --r: 0">
+            <div class="deck-box"><div class="deck-stack"></div><div class="deck-slot" id="deck-slot"></div><div class="deck-count" id="deck-count"></div></div>
+          </div>
+        </div>
+        <div class="hint" id="hint"></div>
+      </section>
+
+      <section class="row row-cap-me">
+        <div class="panel"><div class="info" id="info-0"></div></div>
+        <div class="combos" id="combo-0"></div>
+        <div class="captured" id="cap-0"></div>
+      </section>
+
+      <section class="row row-me">
+        <div class="hand" id="hand-0"></div>
+      </section>
+
+      <div id="fx"></div>
+      <div id="modal" class="hidden"></div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

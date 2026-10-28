@@ -1,0 +1,132 @@
+import type { PlayerIndex } from './game';
+
+export const INITIAL_MONEY = 50000;
+export const FORFEIT_POINTS = 7;
+export const SAVE_KEY = 'gostop-save-v1';
+
+export interface AiProfile {
+  name: string;
+  money: number;
+  initialMoney: number;
+}
+
+export interface Profile {
+  version: 1;
+  playerMoney: number;
+  level: number;
+  ai: AiProfile;
+  /** 다음 판 선 (0: 나, 1: AI) */
+  dealer: PlayerIndex;
+  nagariStreak: number;
+  inProgress: boolean;
+  stats: { wins: number; losses: number; draws: number };
+}
+
+export const pointRate = (level: number): number => (Math.floor(level / 10) + 1) * 100;
+export const nagariMultiplier = (streak: number): number => 2 ** streak;
+
+const ADJ = ['번개손', '느긋한', '능청스런', '눈치 빠른', '겁 없는', '꼼꼼한', '배짱 좋은', '수상한', '전설의', '조용한', '깐깐한', '허세 가득'];
+const NOUN = ['곰', '여우', '너구리', '호랑이', '두꺼비', '부엉이', '고양이', '거북이', '까치', '수달', '오소리', '독수리'];
+
+export function randomAiName(rng: () => number = Math.random, avoid?: string): string {
+  for (;;) {
+    const n = `${ADJ[Math.floor(rng() * ADJ.length)]} ${NOUN[Math.floor(rng() * NOUN.length)]}`;
+    if (n !== avoid) return n;
+  }
+}
+
+export function createAi(prev: AiProfile | null, rng: () => number = Math.random): AiProfile {
+  const money = prev ? Math.round((prev.initialMoney * (1 + rng() * 0.4)) / 100) * 100 : INITIAL_MONEY;
+  return { name: randomAiName(rng, prev?.name), money, initialMoney: money };
+}
+
+export function newProfile(rng: () => number = Math.random): Profile {
+  return {
+    version: 1,
+    playerMoney: INITIAL_MONEY,
+    level: 1,
+    ai: createAi(null, rng),
+    dealer: rng() < 0.5 ? 0 : 1,
+    nagariStreak: 0,
+    inProgress: false,
+    stats: { wins: 0, losses: 0, draws: 0 },
+  };
+}
+
+export interface Settlement {
+  winner: PlayerIndex | null;
+  points: number;
+  rate: number;
+  amount: number;
+  paid: number;
+  aiBankrupt: boolean;
+  playerBankrupt: boolean;
+  /** AI 파산 시 새로 등장한 AI */
+  newAi?: AiProfile;
+  oldAi: AiProfile;
+  levelBefore: number;
+  levelAfter: number;
+}
+
+/** 판 결과를 프로필에 반영한다. 원본은 바꾸지 않는다. */
+export function applyResult(p: Profile, winner: PlayerIndex | null, points: number, rng: () => number = Math.random): { profile: Profile; settlement: Settlement } {
+  const next: Profile = structuredClone(p);
+  next.inProgress = false;
+  const rate = pointRate(p.level);
+  const base: Settlement = {
+    winner, points, rate, amount: 0, paid: 0, aiBankrupt: false, playerBankrupt: false,
+    oldAi: { ...p.ai }, levelBefore: p.level, levelAfter: p.level,
+  };
+  if (winner === null) {
+    next.nagariStreak++;
+    next.stats.draws++;
+    return { profile: next, settlement: base };
+  }
+  next.nagariStreak = 0;
+  next.dealer = winner;
+  const amount = points * rate;
+  let paid: number;
+  if (winner === 0) {
+    paid = Math.min(amount, next.ai.money);
+    next.ai.money -= paid;
+    next.playerMoney += paid;
+    next.stats.wins++;
+  } else {
+    paid = Math.min(amount, next.playerMoney);
+    next.playerMoney -= paid;
+    next.ai.money += paid;
+    next.stats.losses++;
+  }
+  const settlement: Settlement = { ...base, amount, paid };
+  if (next.ai.money <= 0) {
+    settlement.aiBankrupt = true;
+    next.level++;
+    next.ai = createAi(p.ai, rng);
+    settlement.newAi = { ...next.ai };
+    settlement.levelAfter = next.level;
+  }
+  if (next.playerMoney <= 0) {
+    settlement.playerBankrupt = true;
+  }
+  return { profile: next, settlement };
+}
+
+export function loadProfile(storage: Storage | undefined): Profile | null {
+  try {
+    const raw = storage?.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as Profile;
+    if (p?.version !== 1 || typeof p.playerMoney !== 'number' || !p.ai) return null;
+    return p;
+  } catch {
+    return null;
+  }
+}
+
+export function saveProfile(storage: Storage | undefined, p: Profile): void {
+  try {
+    storage?.setItem(SAVE_KEY, JSON.stringify(p));
+  } catch {
+    // 저장 불가 환경(시크릿 모드 등)에서는 무시
+  }
+}
