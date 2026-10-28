@@ -27,7 +27,7 @@ export function potential(mine: number[], theirs: number[]): number {
   return v;
 }
 
-function evaluate(s: GameState, me: PlayerIndex): number {
+export function evaluate(s: GameState, me: PlayerIndex): number {
   if (s.phase === 'end' && s.result) {
     if (s.result.winner === me) return 1000 + s.result.final;
     if (s.result.winner !== null) return -1000 - s.result.final;
@@ -113,7 +113,7 @@ function scorePlayAction(s: GameState, action: Action, me: PlayerIndex): number 
   return total / unseen.length;
 }
 
-function decideGoStop(s: GameState): boolean {
+export function decideGoStop(s: GameState): boolean {
   const me = s.current;
   const opp: PlayerIndex = me === 0 ? 1 : 0;
   const p = s.players[me];

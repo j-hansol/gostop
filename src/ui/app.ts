@@ -8,6 +8,7 @@ import {
   applyResult, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, pointRate, Profile, saveProfile, Settlement,
 } from '../engine/economy';
 import { backSvg, cardSvg, dummySvg, preloadCards } from './cardArt';
+import { actionLabel, Advice, adviseGoStop, adviseGukjin, publicView, recommend } from '../engine/advisor';
 import { isMuted, setMuted, sfx, unlockAudio } from './sound';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -26,6 +27,18 @@ const storage = (() => {
 })();
 
 class Cancelled extends Error {}
+
+/** 수 추천 켜기/끄기 (기본 켜짐) */
+let adviceOn = storage?.getItem('gostop-advice') !== 'off';
+function setAdviceOn(v: boolean) {
+  adviceOn = v;
+  try {
+    storage?.setItem('gostop-advice', v ? 'on' : 'off');
+  } catch {
+    /* 무시 */
+  }
+}
+const sameAction = (a: Action, b: Action) => JSON.stringify(a) === JSON.stringify(b);
 
 const narrowQuery = window.matchMedia('(max-width: 720px)');
 
@@ -53,6 +66,9 @@ export class App {
   private els = new Map<string, HTMLElement>();
   private faces = new Map<string, Face>();
   private floorSlots = new Map<number, [number, number]>();
+  /** 마지막으로 계산한 추천 (상태 객체가 같을 때만 재사용) */
+  private advice: { state: GameState; adv: Advice | null } | null = null;
+  private adviceTimer = 0;
 
   constructor() {
     let p = loadProfile(storage);
@@ -109,6 +125,12 @@ export class App {
     });
     this.renderSoundBtn();
     $('btn-rules').addEventListener('click', () => void this.showRules());
+    $('btn-advice').addEventListener('click', () => {
+      setAdviceOn(!adviceOn);
+      this.renderAdviceBtn();
+      if (this.state) this.updateAdvice(this.state);
+    });
+    this.renderAdviceBtn();
     $('btn-reset').addEventListener('click', () => void this.confirmReset());
     // 블로그 팝업 안에서 실행될 때만 닫기 버튼을 보인다
     if ((window as { __GOSTOP_EMBED?: boolean }).__GOSTOP_EMBED) {
@@ -118,6 +140,70 @@ export class App {
     $('hand-0').addEventListener('click', (e) => this.onHandClick(e));
     $('floor').addEventListener('click', (e) => this.onFloorClick(e));
     document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
+  }
+
+  private renderAdviceBtn() {
+    $('btn-advice').classList.toggle('on', adviceOn);
+    $('btn-advice').title = adviceOn ? '수 추천 끄기' : '수 추천 켜기';
+  }
+
+  /** 내 차례면 추천을 계산해 패에 표시한다. 계산은 화면을 먼저 그린 뒤에 한다 */
+  private updateAdvice(s: GameState) {
+    window.clearTimeout(this.adviceTimer);
+    const show = adviceOn && !this.busy && s.current === 0 && (s.phase === 'play' || s.phase === 'chooseFloor');
+    if (!show) {
+      this.paintAdvice(null);
+      return;
+    }
+    if (this.advice?.state === s) {
+      this.paintAdvice(this.advice.adv);
+      return;
+    }
+    this.paintAdvice(null);
+    this.adviceTimer = window.setTimeout(() => {
+      if (this.state !== s || this.busy) return;
+      // 실제 상태가 아니라 공개 정보만 넘긴다
+      this.advice = { state: s, adv: recommend(publicView(s, 0)) };
+      this.paintAdvice(this.advice.adv);
+    }, 60);
+  }
+
+  private paintAdvice(adv: Advice | null) {
+    for (const el of this.els.values()) delete el.dataset.rec;
+    const hint = $('hint');
+    hint.querySelector('.advice')?.remove();
+    if (!adv) return;
+    const s = this.state!;
+    const marked = new Set<string>();
+    for (const r of adv.ranked.slice(0, 3)) {
+      const a = r.action;
+      let keys: string[] = [];
+      if (a.type === 'play' || a.type === 'choose') keys = [`c${a.card}`];
+      else if (a.type === 'bomb') keys = s.players[0].hand.filter((c) => monthOf(c) === a.month).map((c) => `c${c}`);
+      else if (a.type === 'dummy') keys = ['d0-0'];
+      // 같은 카드의 흔들기/그냥 내기처럼 겹치면 높은 순위만 표시
+      keys = keys.filter((k) => !marked.has(k));
+      for (const k of keys) {
+        marked.add(k);
+        const el = this.els.get(k);
+        if (el) el.dataset.rec = String(r.rank);
+      }
+    }
+    const best = adv.ranked[0];
+    const line = document.createElement('div');
+    line.className = 'advice';
+    line.innerHTML = `💡 <b>${actionLabel(best.action)}</b> · ${best.reason}`;
+    hint.append(line);
+  }
+
+  /** 대화상자에 붙일 추천 한 줄. options 중 추천 순위가 가장 높은 것을 고른다 */
+  private adviceLine(options: { action: Action; label: string }[]): string {
+    if (!adviceOn || !this.state) return '';
+    const adv = this.advice?.state === this.state ? this.advice.adv : recommend(publicView(this.state, 0));
+    if (!adv) return '';
+    const rankOf = (a: Action) => adv.ranked.findIndex((r) => sameAction(r.action, a));
+    const best = options.filter((o) => rankOf(o.action) >= 0).sort((x, y) => rankOf(x.action) - rankOf(y.action))[0];
+    return best ? `<p class="advice-line">💡 추천: <b>${best.label}</b></p>` : '';
   }
 
   private renderSoundBtn() {
@@ -203,7 +289,8 @@ export class App {
           `<div class="gukjin-pick">${cardSvg(GUKJIN)}</div>` +
             `<p style="text-align:center">9월 술잔(국진)을 <b>쌍피</b>로 옮길까요?<br>` +
             `열끗으로 두면 <b>${o.yeol}점</b>, 쌍피로 옮기면 <b>${o.pi}점</b>입니다.<br>` +
-            `<small>쌍피로 옮기면 이번 판이 끝날 때까지 되돌릴 수 없습니다.</small></p>`,
+            `<small>쌍피로 옮기면 이번 판이 끝날 때까지 되돌릴 수 없습니다.</small></p>` +
+            (adviceOn ? (() => { const g = adviseGukjin(publicView(s, 0)); return `<p class="advice-line">💡 추천: <b>${g.toPi ? '쌍피로 전환' : '열끗 유지'}</b> · ${g.reason}</p>`; })() : ''),
           [{ label: `쌍피로 전환 (${o.pi}점)`, value: 'pi', cls: 'red' }, { label: `열끗 유지 (${o.yeol}점)`, value: 'yeol' }],
         );
         if (myGen !== this.gen) return;
@@ -218,7 +305,8 @@ export class App {
           `${sc}점 달성!`,
           `<div class="big">${sc}점</div>` +
             `<p style="text-align:center">고를 하면 계속 진행합니다. 상대가 먼저 나면 <b>고박</b>(×2)을 씁니다.<br>` +
-            `${p.goCount + 1}고 시 현재 점수 기준 <b>${next.value}점</b></p>`,
+            `${p.goCount + 1}고 시 현재 점수 기준 <b>${next.value}점</b></p>` +
+            (adviceOn ? (() => { const g = adviseGoStop(publicView(s, 0)); return `<p class="advice-line">💡 추천: <b>${g.go ? '고' : '스톱'}</b> · ${g.reason}</p>`; })() : ''),
           [{ label: `${p.goCount + 1}고!`, value: 'go', cls: 'red' }, { label: '스톱', value: 'stop' }],
         );
         if (myGen !== this.gen) return;
@@ -267,7 +355,8 @@ export class App {
       const r = await this.dialog(
         '폭탄!',
         `<p>같은 월 3장을 들고 있고 바닥에 1장이 있습니다. 3장을 한 번에 내면 4장을 모두 먹고 피 1장을 받으며, 점수가 ×2가 됩니다. 빈 패 2장을 받습니다.</p>` +
-          this.cardRow(same),
+          this.cardRow(same) +
+          this.adviceLine([{ action: { type: 'bomb', month: m }, label: '폭탄' }, { action: { type: 'play', card: id }, label: '한 장만 내기' }]),
         [{ label: '폭탄', value: 'bomb', cls: 'red' }, { label: '한 장만 내기', value: 'one' }, { label: '취소', value: 'cancel', cls: 'gray' }],
       );
       this.busy = false;
@@ -279,7 +368,8 @@ export class App {
       this.busy = true;
       const r = await this.dialog(
         '흔들기',
-        `<p>같은 월 3장을 들고 있습니다. 흔들면 상대에게 3장을 보여주고, 이기면 점수가 ×2가 됩니다.</p>` + this.cardRow(same),
+        `<p>같은 월 3장을 들고 있습니다. 흔들면 상대에게 3장을 보여주고, 이기면 점수가 ×2가 됩니다.</p>` + this.cardRow(same) +
+          this.adviceLine([{ action: { type: 'play', card: id, shake: true }, label: '흔들기' }, { action: { type: 'play', card: id }, label: '그냥 내기' }]),
         [{ label: '흔들기', value: 'shake', cls: 'red' }, { label: '그냥 내기', value: 'play' }, { label: '취소', value: 'cancel', cls: 'gray' }],
       );
       this.busy = false;
@@ -625,6 +715,7 @@ export class App {
       hint.textContent = '낼 패를 고르세요';
       hint.classList.add('show');
     } else hint.classList.remove('show');
+    this.updateAdvice(s);
 
     this.renderInfo(s);
 
@@ -723,6 +814,7 @@ export class App {
         <h3>점수</h3><ul><li>광: 3광 3점(비광 포함 2점), 4광 4점, 5광 15점</li>
         <li>열끗·띠 5장 1점, 피 10장 1점 (이후 1장마다 +1)</li>
         <li>고도리 5점, 홍단·청단·초단 각 3점</li>
+        <li>💡 추천을 켜 두면 내 차례마다 공개된 패만 보고 둘 만한 패를 표시합니다.</li>
         <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 보너스패를 가져가면 상대 피 1장을 빼앗습니다(일반 피 우선). 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
         <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
         <li>흔들기·폭탄: 점수 ×2 · 총통·삼연뻑: 즉시 ${10}점 승리</li>

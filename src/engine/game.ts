@@ -16,6 +16,8 @@ export interface PlayerState {
   goCount: number;
   lastGoScore: number;
   shakes: number;
+  /** 흔들기로 상대에게 보여 준 패 (공개 정보) */
+  revealed: number[];
   bombs: number;
   ppeokStreak: number;
   turnsTaken: number;
@@ -114,7 +116,7 @@ export type Rng = () => number;
 const clone = <T>(v: T): T => structuredClone(v);
 
 function newPlayer(): PlayerState {
-  return { hand: [], dummies: 0, captured: [], goCount: 0, lastGoScore: 0, shakes: 0, bombs: 0, ppeokStreak: 0, turnsTaken: 0, gukjinPi: false, gukjinAskedTurn: -1 };
+  return { hand: [], dummies: 0, captured: [], goCount: 0, lastGoScore: 0, shakes: 0, revealed: [], bombs: 0, ppeokStreak: 0, turnsTaken: 0, gukjinPi: false, gukjinAskedTurn: -1 };
 }
 
 export function shuffle(ids: number[], rng: Rng): number[] {
@@ -333,6 +335,7 @@ function doPlay(rec: Recorder, action: Action) {
     const events: GameEvent[] = [];
     if (action.shake && canShake(s, c)) {
       p.shakes++;
+      p.revealed.push(...sameMonth(p.hand, m));
       events.push({ type: 'shake', player: me, cards: sameMonth(p.hand, m) });
     }
     const matches = sameMonth(s.floor, m);
