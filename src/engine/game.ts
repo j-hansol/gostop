@@ -234,9 +234,12 @@ export function canShake(s: GameState, c: number): boolean {
   return sameMonth(p.hand, m).length === 3 && sameMonth(s.floor, m).length === 0;
 }
 
+/** 폭탄: 손에 같은 월 3장 + 바닥 1장, 또는 손에 2장 + 바닥 2장 */
 export function canBomb(s: GameState, m: number): boolean {
   const p = s.players[s.current];
-  return sameMonth(p.hand, m).length === 3 && sameMonth(s.floor, m).length === 1;
+  const hand = sameMonth(p.hand, m).length;
+  const floor = sameMonth(s.floor, m).length;
+  return (hand === 3 && floor === 1) || (hand === 2 && floor === 2);
 }
 
 /** 두 장 중 고를 때 실제로 차이가 있는지 */
@@ -309,7 +312,8 @@ function doPlay(rec: Recorder, action: Action) {
     remove(p.hand, mine);
     s.floor.push(...mine);
     p.bombs++;
-    p.dummies += 2;
+    // 한 번에 낸 장수만큼 손패가 줄었으므로 빈 패를 (낸 장수 - 1)장 받는다
+    p.dummies += mine.length - 1;
     ctx.mode = 'bomb';
     ctx.playedMonth = m;
     ctx.playedCaptures = [...mine, ...target];

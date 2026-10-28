@@ -6,7 +6,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-5FA04E?logo=nodedotjs&logoColor=white)
 ![No framework](https://img.shields.io/badge/UI-Vanilla%20DOM-F7DF1E?logo=javascript&logoColor=black)
 ![Web Audio](https://img.shields.io/badge/Sound-Web%20Audio%20API-FF6F00)
-![Tests](https://img.shields.io/badge/tests-21%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-36%20passed-brightgreen)
 ![AI Generated](https://img.shields.io/badge/AI%20Generated-Claude%20Code-D97757?logo=anthropic&logoColor=white)
 
 AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RULES.md](docs/RULES.md)를 참고하세요.

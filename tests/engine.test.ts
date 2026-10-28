@@ -120,9 +120,11 @@ describe('game flow', () => {
 describe('economy', () => {
   it('점수당 금액', () => {
     expect(pointRate(1)).toBe(100);
-    expect(pointRate(9)).toBe(100);
-    expect(pointRate(10)).toBe(200);
-    expect(pointRate(25)).toBe(300);
+    expect(pointRate(4)).toBe(100);
+    expect(pointRate(5)).toBe(200);
+    expect(pointRate(9)).toBe(200);
+    expect(pointRate(10)).toBe(300);
+    expect(pointRate(25)).toBe(600);
   });
   it('AI 파산 → 레벨업, 새 AI는 이전 생성 금액의 0~40% 증액', () => {
     const p = newProfile(seeded(3));
@@ -188,6 +190,42 @@ describe('국진 전환', () => {
     const no = last(step(s, { type: 'gukjin', toPi: false }));
     expect(no.players[0].gukjinPi).toBe(false);
     expect(no.phase).toBe('play');
+  });
+});
+
+describe('2장 폭탄', () => {
+  it('손 2장 + 바닥 2장이면 폭탄으로 4장을 먹고 피 1장, 빈 패 1장', async () => {
+    const { canBomb } = await import('../src/engine/game');
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(31) }));
+    const rest = cardLocations(s).filter((id) => monthOf(id) !== 3 && id !== 2 && monthOf(id) !== 0);
+    // 3월: 손에 8·9, 바닥에 10·11. 상대는 1월 피(2)를 가지고 있다
+    s.players[0].hand = [8, 9, ...rest.slice(0, 4)];
+    s.players[0].captured = [];
+    s.players[1].hand = rest.slice(4, 10);
+    s.players[1].captured = [2];
+    s.floor = [10, 11, ...rest.slice(10, 12)];
+    s.deck = [...rest.slice(12), 48, 49];
+    s.ppeokOwner = {};
+    checkConservation(s);
+    expect(canBomb(s, 3)).toBe(true);
+    expect(legalActions(s)).toContainEqual({ type: 'bomb', month: 3 });
+    const t = last(step(s, { type: 'bomb', month: 3 }));
+    checkConservation(t);
+    const me = t.players[0];
+    expect([8, 9, 10, 11].every((id) => me.captured.includes(id))).toBe(true);
+    expect(me.captured).toContain(2); // 상대 피 1장
+    expect(me.bombs).toBe(1);
+    expect(me.dummies).toBe(1);
+    expect(me.hand.length).toBe(4);
+  });
+
+  it('손 1장 + 바닥 2장은 폭탄이 아니다', async () => {
+    const { canBomb } = await import('../src/engine/game');
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(32) }));
+    const rest = cardLocations(s).filter((id) => monthOf(id) !== 3 && monthOf(id) !== 0);
+    s.players[0].hand = [8, ...rest.slice(0, 5)];
+    s.floor = [10, 11, ...rest.slice(5, 7)];
+    expect(canBomb(s, 3)).toBe(false);
   });
 });
 

@@ -354,7 +354,7 @@ export class App {
       this.busy = true;
       const r = await this.dialog(
         '폭탄!',
-        `<p>같은 월 3장을 들고 있고 바닥에 1장이 있습니다. 3장을 한 번에 내면 4장을 모두 먹고 피 1장을 받으며, 점수가 ×2가 됩니다. 빈 패 2장을 받습니다.</p>` +
+        `<p>같은 월 ${same.length}장을 들고 있고 바닥에 ${4 - same.length}장이 있습니다. ${same.length}장을 한 번에 내면 4장을 모두 먹고 피 1장을 받으며, 점수가 ×2가 됩니다. 빈 패 ${same.length - 1}장을 받습니다.</p>` +
           this.cardRow(same) +
           this.adviceLine([{ action: { type: 'bomb', month: m }, label: '폭탄' }, { action: { type: 'play', card: id }, label: '한 장만 내기' }]),
         [{ label: '폭탄', value: 'bomb', cls: 'red' }, { label: '한 장만 내기', value: 'one' }, { label: '취소', value: 'cancel', cls: 'gray' }],
@@ -817,7 +817,7 @@ export class App {
         <li>💡 추천을 켜 두면 내 차례마다 공개된 패만 보고 둘 만한 패를 표시합니다.</li>
         <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 보너스패를 가져가면 상대 피 1장을 빼앗습니다(일반 피 우선). 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
         <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
-        <li>흔들기·폭탄: 점수 ×2 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
+        <li>흔들기·폭탄: 점수 ×2 · 폭탄은 손 3장+바닥 1장 또는 손 2장+바닥 2장 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
         <li>1고 +1, 2고 +2, 3고부터 ×2씩</li>
         <li>피박·광박·멍박·고박: 각 ×2</li></ul>
         <h3>금액</h3><ul><li>점당 금액 = (레벨÷10의 몫 + 1) × 100원</li>

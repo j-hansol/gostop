@@ -22,7 +22,7 @@ export interface Profile {
   stats: { wins: number; losses: number; draws: number };
 }
 
-export const pointRate = (level: number): number => (Math.floor(level / 10) + 1) * 100;
+export const pointRate = (level: number): number => (Math.floor(level / 5) + 1) * 100;
 export const nagariMultiplier = (streak: number): number => 2 ** streak;
 
 const ADJ = ['번개손', '느긋한', '능청스런', '눈치 빠른', '겁 없는', '꼼꼼한', '배짱 좋은', '수상한', '전설의', '조용한', '깐깐한', '허세 가득'];

@@ -21,9 +21,10 @@ export function potential(mine: number[], theirs: number[]): number {
   };
   v += prog(GODORI, [0, 1.2, 3.5]);
   for (const set of Object.values(DANS)) v += prog(set, [0, 1, 3]);
-  if (d.yeolCount < 5) v += d.yeolCount * 0.6;
-  if (d.ttiCount < 5) v += d.ttiCount * 0.55;
-  if (d.piCount < 10) v += d.piCount * 0.6 + (d.piCount >= 7 ? 0.8 : 0);
+  // 장수 진행 가치는 기준 장수에 닿은 뒤에도 유지한다 (사라지면 10장째 피가 오히려 손해로 계산된다)
+  v += Math.min(d.yeolCount, 5) * 0.6;
+  v += Math.min(d.ttiCount, 5) * 0.55;
+  v += Math.min(d.piCount, 10) * 0.6 + (d.piCount >= 7 ? 0.8 : 0);
   return v;
 }
 
