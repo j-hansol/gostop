@@ -2,6 +2,8 @@ import type { PlayerIndex } from './game';
 
 export const INITIAL_MONEY = 50000;
 export const FORFEIT_POINTS = 7;
+/** 각자의 첫 턴에 뻑이 나면 상대에게서 받는 점수 */
+export const FIRST_PPEOK_POINTS = 7;
 export const SAVE_KEY = 'gostop-save-v1';
 
 export interface AiProfile {
@@ -69,6 +71,27 @@ export interface Settlement {
 }
 
 /** 판 결과를 프로필에 반영한다. 원본은 바꾸지 않는다. */
+/** to에게 amount를 옮긴다. 주는 쪽 보유금이 모자라면 있는 만큼만. 실제로 옮긴 금액을 돌려준다 */
+function transfer(p: Profile, to: PlayerIndex, amount: number): number {
+  const paid = Math.min(amount, to === 0 ? p.ai.money : p.playerMoney);
+  if (to === 0) {
+    p.ai.money -= paid;
+    p.playerMoney += paid;
+  } else {
+    p.playerMoney -= paid;
+    p.ai.money += paid;
+  }
+  return paid;
+}
+
+/** 판 도중 정산 (첫뻑). 파산 처리는 판이 끝날 때 applyResult에서 한다 */
+export function payBonus(p: Profile, to: PlayerIndex, points: number): { profile: Profile; amount: number; paid: number } {
+  const next: Profile = structuredClone(p);
+  const amount = points * pointRate(p.level);
+  const paid = transfer(next, to, amount);
+  return { profile: next, amount, paid };
+}
+
 export function applyResult(p: Profile, winner: PlayerIndex | null, points: number, rng: () => number = Math.random): { profile: Profile; settlement: Settlement } {
   const next: Profile = structuredClone(p);
   next.inProgress = false;
@@ -77,27 +100,20 @@ export function applyResult(p: Profile, winner: PlayerIndex | null, points: numb
     winner, points, rate, amount: 0, paid: 0, aiBankrupt: false, playerBankrupt: false,
     oldAi: { ...p.ai }, levelBefore: p.level, levelAfter: p.level,
   };
+  let settlement: Settlement = base;
   if (winner === null) {
     next.nagariStreak++;
     next.stats.draws++;
-    return { profile: next, settlement: base };
-  }
-  next.nagariStreak = 0;
-  next.dealer = winner;
-  const amount = points * rate;
-  let paid: number;
-  if (winner === 0) {
-    paid = Math.min(amount, next.ai.money);
-    next.ai.money -= paid;
-    next.playerMoney += paid;
-    next.stats.wins++;
   } else {
-    paid = Math.min(amount, next.playerMoney);
-    next.playerMoney -= paid;
-    next.ai.money += paid;
-    next.stats.losses++;
+    next.nagariStreak = 0;
+    next.dealer = winner;
+    const amount = points * rate;
+    const paid = transfer(next, winner, amount);
+    if (winner === 0) next.stats.wins++;
+    else next.stats.losses++;
+    settlement = { ...base, amount, paid };
   }
-  const settlement: Settlement = { ...base, amount, paid };
+  // 판 도중 첫뻑 지급으로 보유금이 바닥났을 수도 있으므로 나가리여도 파산을 확인한다
   if (next.ai.money <= 0) {
     settlement.aiBankrupt = true;
     next.level++;

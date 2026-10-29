@@ -8,6 +8,7 @@ import {
   Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, gukjinOptions, legalActions, PlayerIndex, PlayerState, Rng, step, WIN_SCORE,
 } from './game';
 import { comboProgress, maxPiCount, score } from './scoring';
+import { FIRST_PPEOK_POINTS } from './economy';
 
 type PublicPlayer = Omit<PlayerState, 'hand'>;
 
@@ -318,6 +319,9 @@ function simulate(v: PublicView, action: Action, worlds: GameState[]): Stats {
     for (const t of new Set(events.filter((e) => 'player' in e ? e.player === me : true).map((e) => e.type))) {
       freq[t] = (freq[t] ?? 0) + 1;
     }
+    // 첫뻑은 판과 별도로 7점 금액을 주고받는다 (평가 단위에서 최종 1점 ≈ 1)
+    const firstPpeok = (es: GameEvent[], p: PlayerIndex) => es.some((e) => e.type === 'ppeok' && e.player === p && e.first);
+    let bonus = firstPpeok(events, me) ? FIRST_PPEOK_POINTS : 0;
     // 내 차례가 끝났으면 상대의 응수 한 수까지 본다
     if (s.phase === 'play' && s.current === opp) {
       const oe: GameEvent[] = [];
@@ -326,8 +330,9 @@ function simulate(v: PublicView, action: Action, worlds: GameState[]): Stats {
       s = resolve(last(of), opp, oe, me);
       if (oe.some((e) => e.type === 'combo' && e.player === opp)) oppCombo++;
       if (oe.some((e) => e.type === 'scoreReady' && e.player === opp) || s.result?.winner === opp) oppReach++;
+      if (firstPpeok(oe, opp)) bonus -= FIRST_PPEOK_POINTS;
     }
-    total += evaluateAdv(s, me);
+    total += evaluateAdv(s, me) + bonus;
   }
   const n = worlds.length;
   for (const k of Object.keys(freq) as (keyof typeof freq)[]) freq[k]! /= n;
@@ -452,7 +457,7 @@ function describe(v: PublicView, action: Action, st: Stats, others: Stats[], wor
   if (!take.length && action.type === 'play' && !action.shake && parts.length === 0) {
     parts.push((st.freq.ppeok ?? 0) < avg((s) => s.freq.ppeok ?? 0) ? '맞는 패가 없을 때 가장 안전하게 버리는 패' : '버려도 손해가 가장 적은 패');
   }
-  if ((st.freq.ppeok ?? 0) >= 0.3) parts.push(`뻑 위험 ${pct(st.freq.ppeok!)}`);
+  if ((st.freq.ppeok ?? 0) >= 0.3) parts.push(v.players[me].turnsTaken === 0 ? `첫뻑 기회 ${pct(st.freq.ppeok!)} (7점 금액)` : `뻑 위험 ${pct(st.freq.ppeok!)}`);
   return parts.slice(0, 3).join(' · ') || '기대 점수가 가장 높은 수';
 }
 

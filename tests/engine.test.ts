@@ -193,6 +193,67 @@ describe('국진 전환', () => {
   });
 });
 
+describe('뻑 규칙', () => {
+  /** 3월 패로 장면을 만든다. 나머지 카드는 손패·더미에 채운다 */
+  function setup(o: { hand: number[]; floor: number[]; oppCap: number[]; deckTop?: number[]; owner?: PlayerIndex; turnsTaken?: number }) {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(41) }));
+    const used = new Set([...o.hand, ...o.floor, ...o.oppCap, ...(o.deckTop ?? [])]);
+    const rest = cardLocations(s).filter((id) => !used.has(id) && monthOf(id) !== 3 && monthOf(id) !== 0);
+    s.players[0].hand = [...o.hand, ...rest.slice(0, 5)];
+    s.players[0].captured = [];
+    s.players[0].turnsTaken = o.turnsTaken ?? 0;
+    s.players[1].hand = rest.slice(5, 11);
+    s.players[1].captured = [...o.oppCap];
+    s.floor = [...o.floor];
+    s.deck = [...(o.deckTop ?? []), ...rest.slice(11), 48, 49, ...[8, 9, 10, 11].filter((id) => !used.has(id))];
+    s.ppeokOwner = o.owner === undefined ? {} : { 3: o.owner };
+    s.current = 0;
+    checkConservation(s);
+    return s;
+  }
+  const run = (s: GameState) => {
+    const frames = step(s, { type: 'play', card: s.players[0].hand[0] });
+    return { t: last(frames), events: frames.flatMap((f) => f.events) };
+  };
+
+  it('처음 배분 때 깔린 같은 월 3장을 먹어도 뻑 먹기처럼 피 1장을 받는다', () => {
+    const { t, events } = run(setup({ hand: [11], floor: [8, 9, 10], oppCap: [2, 6] }));
+    expect([8, 9, 10, 11].every((id) => t.players[0].captured.includes(id))).toBe(true);
+    expect(events).toContainEqual({ type: 'ppeokTake', player: 0, self: false });
+    expect(t.players[1].captured.length).toBe(1);
+  });
+
+  it('상대가 싼 뻑을 먹으면 피 1장, 자기가 싼 뻑을 먹으면(자뻑) 피 2장', () => {
+    expect(run(setup({ hand: [11], floor: [8, 9, 10], oppCap: [2, 6, 7], owner: 1 })).t.players[1].captured.length).toBe(2);
+    const self = run(setup({ hand: [11], floor: [8, 9, 10], oppCap: [2, 6, 7], owner: 0 }));
+    expect(self.events).toContainEqual({ type: 'ppeokTake', player: 0, self: true });
+    expect(self.t.players[1].captured.length).toBe(1);
+  });
+
+  it('첫 턴에 난 뻑만 첫뻑으로 표시된다', () => {
+    // 3월 광(8)을 내 바닥 3월 피(10)와 맞췄는데 뒤집은 패도 3월(9) → 뻑
+    const first = run(setup({ hand: [8], floor: [10], oppCap: [], deckTop: [9] }));
+    expect(first.events).toContainEqual({ type: 'ppeok', player: 0, first: true, streak: 1 });
+    const later = run(setup({ hand: [8], floor: [10], oppCap: [], deckTop: [9], turnsTaken: 2 }));
+    expect(later.events).toContainEqual({ type: 'ppeok', player: 0, first: false, streak: 1 });
+  });
+
+  it('첫뻑 금액은 7점 × 점당 금액이고, 보유금이 바닥나면 나가리여도 파산 처리된다', async () => {
+    const { payBonus, FIRST_PPEOK_POINTS } = await import('../src/engine/economy');
+    const p = newProfile(seeded(3));
+    const r = payBonus(p, 0, FIRST_PPEOK_POINTS);
+    expect(r.amount).toBe(7 * pointRate(1));
+    expect(r.profile.playerMoney).toBe(p.playerMoney + 700);
+    expect(r.profile.ai.money).toBe(p.ai.money - 700);
+    const poor = { ...r.profile, ai: { ...r.profile.ai, money: 300 } };
+    const paid = payBonus(poor, 0, FIRST_PPEOK_POINTS);
+    expect(paid.paid).toBe(300);
+    const end = applyResult(paid.profile, null, 0, seeded(9));
+    expect(end.settlement.aiBankrupt).toBe(true);
+    expect(end.profile.level).toBe(2);
+  });
+});
+
 describe('2장 폭탄', () => {
   it('손 2장 + 바닥 2장이면 폭탄으로 4장을 먹고 피 1장, 빈 패 1장', async () => {
     const { canBomb } = await import('../src/engine/game');

@@ -1,11 +1,11 @@
 import { card, isBonus, monthOf } from '../engine/cards';
 import { chooseAction } from '../engine/ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, newRound, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, newRound, PIBAK_LIMIT, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
 } from '../engine/game';
-import { COMBO_LABEL, comboProgress } from '../engine/scoring';
+import { COMBO_LABEL, comboProgress, maxPiCount } from '../engine/scoring';
 import {
-  applyResult, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, pointRate, Profile, saveProfile, Settlement,
+  applyResult, FIRST_PPEOK_POINTS, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, payBonus, pointRate, Profile, saveProfile, Settlement,
 } from '../engine/economy';
 import { backSvg, cardSvg, dummySvg, preloadCards } from './cardArt';
 import { actionLabel, Advice, adviseGoStop, adviseGukjin, publicView, recommend } from '../engine/advisor';
@@ -140,6 +140,10 @@ export class App {
     $('hand-0').addEventListener('click', (e) => this.onHandClick(e));
     $('floor').addEventListener('click', (e) => this.onFloorClick(e));
     document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
+    // 게임 영역 안에서는 끌어 놓기와 글자 선택을 막는다 (CSS user-select가 안 먹는 브라우저 대비)
+    const app = $('app');
+    app.addEventListener('dragstart', (e) => e.preventDefault());
+    app.addEventListener('selectstart', (e) => e.preventDefault());
   }
 
   private renderAdviceBtn() {
@@ -499,12 +503,23 @@ export class App {
         case 'jjok': sfx.special(); this.banner('쪽!', side(e.player)); wait = Math.max(wait, 900); break;
         case 'ttadak': sfx.special(); this.banner('따닥!', side(e.player)); wait = Math.max(wait, 900); break;
         case 'sseul': sfx.special(); this.banner('싹쓸이!', side(e.player)); wait = Math.max(wait, 900); break;
-        case 'ppeok':
+        case 'ppeok': {
           sfx.ppeok();
           this.screenShake();
-          this.banner(e.streak >= 2 ? `${e.streak}연뻑!` : e.first ? '첫뻑!' : '뻑!', side(e.player), undefined, 'red');
-          wait = Math.max(wait, 1000);
+          // 각자의 첫 턴에 뻑이 나면 상대에게서 7점에 해당하는 금액을 바로 받는다
+          let sub: string | undefined;
+          if (e.first) {
+            const r = payBonus(this.profile, e.player, FIRST_PPEOK_POINTS);
+            this.profile = r.profile;
+            this.save();
+            this.renderMeta();
+            sub = `${e.player === 0 ? '상대에게서' : '나에게서'} ${won(r.paid)} (${FIRST_PPEOK_POINTS}점)`;
+            this.toast(`${e.player === 0 ? '+' : '-'}${won(r.paid)}`, 0);
+          }
+          this.banner(e.streak >= 2 ? `${e.streak}연뻑!` : e.first ? '첫뻑!' : '뻑!', side(e.player), undefined, 'red', sub);
+          wait = Math.max(wait, e.first ? 1600 : 1000);
           break;
+        }
         case 'ppeokTake': sfx.special(); this.banner(e.self ? '자뻑!' : '뻑 먹기!', side(e.player)); wait = Math.max(wait, 900); break;
         case 'steal':
           sfx.steal();
@@ -657,14 +672,20 @@ export class App {
         else groups[c.kind].push(id);
       }
       groups.pi.sort((a, b) => card(a).piValue - card(b).piValue);
-      const labels = { gwang: ['광', d.gwangCount, 3], yeol: ['열끗', d.yeolCount, 5], tti: ['띠', d.ttiCount, 5], pi: ['피', d.piCount, 10] } as const;
+      // [이름, 장수, 점수가 나는 장수, 이 묶음의 점수]
+      const labels = {
+        gwang: ['광', d.gwangCount, 3, d.gwangPoints],
+        yeol: ['열끗', d.yeolCount, 5, d.yeolPoints],
+        tti: ['띠', d.ttiCount, 5, d.ttiPoints],
+        pi: ['피', d.piCount, 10, d.piPoints],
+      } as const;
       const nodes = (Object.keys(groups) as (keyof typeof groups)[]).map((k) => {
+        const [name, count, goal, pts] = labels[k];
         const g = document.createElement('div');
-        g.className = `cap-group ${k}`;
+        g.className = `cap-group ${k}${count === 0 ? ' empty' : ''}${pts > 0 ? ' scored' : count === goal - 1 ? ' near' : ''}`;
         const label = document.createElement('div');
         label.className = 'cap-label';
-        const [name, count, goal] = labels[k];
-        label.innerHTML = `${name} <b>${count}</b>${count < goal ? `<small>/${goal}</small>` : ''}`;
+        label.innerHTML = `<span class="nm">${name}</span><b>${count}</b>${count < goal ? `<small>/${goal}</small>` : ''}${pts > 0 ? `<em>${pts}점</em>` : ''}`;
         const row = document.createElement('div');
         row.className = `cap-cards ${k}`;
         // 장수가 많아지면 겹침 간격을 줄여 정해진 폭 안에 넣는다 (단위: 카드 폭)
@@ -759,24 +780,48 @@ export class App {
       (p.nagariStreak ? `<span class="nagari">나가리 ×${nagariMultiplier(p.nagariStreak)}</span>` : '');
   }
 
+  /**
+   * 정보 패널: 이름·보유금 → 큰 점수와 목표까지의 막대 → 점수 내역 → 상태 표시(선·고·배수·위험) 순.
+   * 판에 영향이 큰 정보(점수, 고, 배수, 피박·광박 위험)를 크게, 나머지는 작게 둔다.
+   */
   private renderInfo(s: GameState | null = this.state) {
     for (const p of [0, 1] as const) {
       const ps = s?.players[p];
-      const sc = ps ? currentScore(s!, p) : 0;
-      const badges: string[] = [];
-      if (s && s.dealer === p) badges.push('<span class="badge dark">선</span>');
-      if (ps?.goCount) badges.push(`<span class="badge">${ps.goCount}고</span>`);
-      if (ps?.shakes) badges.push(`<span class="badge gold">흔들기 ${ps.shakes}</span>`);
-      if (ps?.bombs) badges.push(`<span class="badge gold">폭탄 ${ps.bombs}</span>`);
-      if (ps?.ppeokStreak) badges.push(`<span class="badge dark">뻑 ${ps.ppeokStreak}</span>`);
+      const os = s?.players[p === 0 ? 1 : 0];
+      const d = ps ? playerScore(ps) : null;
+      const od = os ? playerScore(os) : null;
+      const sc = d?.total ?? 0;
+      // 고를 한 뒤에는 다음 고/스톱 기회가 "지난 고 점수 + 1점"이다
+      const goal = ps?.goCount ? ps.lastGoScore + 1 : WIN_SCORE;
+      const pct = Math.min(100, Math.round((sc / goal) * 100));
+      const chips: string[] = [];
+      if (s && s.dealer === p) chips.push('<span class="st dark">선</span>');
+      if (ps?.goCount) chips.push(`<span class="st red">${ps.goCount}고</span>`);
+      const mult = ps ? 2 ** (ps.shakes + ps.bombs) : 1;
+      if (ps?.shakes) chips.push(`<span class="st gold">흔들기${ps.shakes > 1 ? ` ${ps.shakes}` : ''}</span>`);
+      if (ps?.bombs) chips.push(`<span class="st gold">폭탄${ps.bombs > 1 ? ` ${ps.bombs}` : ''}</span>`);
+      if (mult > 1) chips.push(`<span class="st gold">×${mult}</span>`);
+      if (ps?.ppeokStreak) chips.push(`<span class="st dark">뻑 ${ps.ppeokStreak}</span>`);
+      // 지금 상대가 스톱하면 적용될 위험 (settle과 같은 조건)
+      if (ps && d && od) {
+        if (od.piPoints > 0 && maxPiCount(ps.captured) < PIBAK_LIMIT) chips.push('<span class="st warn">피박 위험</span>');
+        if (od.gwangPoints > 0 && d.gwangCount === 0) chips.push('<span class="st warn">광박 위험</span>');
+      }
+      const parts = d
+        ? ([['광', d.gwangPoints], ['열끗', d.yeolPoints], ['띠', d.ttiPoints], ['피', d.piPoints]] as const).filter(([, v]) => v > 0)
+        : [];
+      const breakdown = parts.length ? parts.map(([k, v]) => `${k} <b>${v}</b>`).join(' · ') : '아직 점수 없음';
       const name = p === 0 ? '나' : this.profile.ai.name;
       const money = p === 0 ? this.profile.playerMoney : this.profile.ai.money;
+      const active = !!s && s.phase !== 'end' && s.current === p;
       $(`info-${p}`).innerHTML =
-        `<div class="name"><span>${name}</span>${p === 0 ? `<span>Lv.${this.profile.level}</span>` : '<span>AI</span>'}</div>` +
+        `<div class="name"><span>${name}</span>${active ? '<span class="turn">차례</span>' : p === 0 ? `<span class="tag">Lv.${this.profile.level}</span>` : '<span class="tag">AI</span>'}</div>` +
         `<div class="money">${won(money)}</div>` +
-        `<div class="score">${sc}<small>점 ${sc >= WIN_SCORE ? '' : `/ ${WIN_SCORE}`}</small></div>` +
-        `<div class="badges">${badges.join('')}</div>`;
-      $(`info-${p}`).classList.toggle('active', !!s && s.phase !== 'end' && s.current === p);
+        `<div class="score${sc >= goal ? ' ready' : ''}"><b>${sc}</b><span>점</span><small>/ ${goal}</small></div>` +
+        `<div class="bar"><i style="width:${pct}%"></i></div>` +
+        `<div class="breakdown">${breakdown}</div>` +
+        (chips.length ? `<div class="badges">${chips.join('')}</div>` : '');
+      $(`info-${p}`).classList.toggle('active', active);
     }
   }
 
@@ -816,7 +861,8 @@ export class App {
         <li>고도리 5점, 홍단·청단·초단 각 3점</li>
         <li>💡 추천을 켜 두면 내 차례마다 공개된 패만 보고 둘 만한 패를 표시합니다.</li>
         <li>쌍피 2장, 보너스 쌍피 2장, 쓰리피 3장으로 계산. 보너스패를 가져가면 상대 피 1장을 빼앗습니다(일반 피 우선). 국진(9월 술잔)은 열끗으로 계산하며, 7점에 닿을 때 쌍피로 전환할지 묻습니다</li></ul>
-        <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
+        <h3>특수</h3><ul><li>쪽·따닥·뻑 먹기(바닥에 깔린 3장 포함)·싹쓸이·폭탄: 상대 피 1장 (자뻑 2장)</li>
+        <li>첫뻑: 각자의 첫 턴에 뻑이 나면 상대에게서 ${FIRST_PPEOK_POINTS}점에 해당하는 금액을 바로 받습니다</li>
         <li>흔들기·폭탄: 점수 ×2 · 폭탄은 손 3장+바닥 1장 또는 손 2장+바닥 2장 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
         <li>1고 +1, 2고 +2, 3고부터 ×2씩</li>
         <li>피박·광박·멍박·고박: 각 ×2</li></ul>

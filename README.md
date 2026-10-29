@@ -6,7 +6,7 @@
 ![Node.js](https://img.shields.io/badge/Node.js-18%2B-5FA04E?logo=nodedotjs&logoColor=white)
 ![No framework](https://img.shields.io/badge/UI-Vanilla%20DOM-F7DF1E?logo=javascript&logoColor=black)
 ![Web Audio](https://img.shields.io/badge/Sound-Web%20Audio%20API-FF6F00)
-![Tests](https://img.shields.io/badge/tests-36%20passed-brightgreen)
+![Tests](https://img.shields.io/badge/tests-40%20passed-brightgreen)
 ![AI Generated](https://img.shields.io/badge/AI%20Generated-Claude%20Code-D97757?logo=anthropic&logoColor=white)
 
 AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RULES.md](docs/RULES.md)를 참고하세요.
@@ -21,6 +21,7 @@ AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RU
 - **AI 상대**: 더미에서 나올 수 있는 패를 모두 가정해 기대값으로 수를 고릅니다
 - **💡 수 추천**: 공개된 정보만으로 내가 둘 만한 패를 1~3위로 표시하고 이유를 보여 줍니다
 - **족보 진행 표시**: 고도리·홍단·청단·초단·광의 진행 상황을 색상 칩과 카드 테두리로 표시합니다
+- **상태 표시**: 큰 점수와 목표(7점, 고 이후에는 다음 점수)까지의 막대, 점수 내역, 선·고·흔들기·폭탄·배수, 피박·광박 위험을 정보 패널에 보여 줍니다. 획득 패는 종류별 묶음마다 장수와 점수를 크게 표시합니다
 - **레벨과 돈**: AI가 파산하면 레벨이 오르고 더 많은 돈을 가진 새 AI가 등장합니다. 진행 상황은 자동 저장됩니다
 - **애니메이션과 효과음**: 패 이동(FLIP), 족보·고/스톱 배너, 합성 효과음
 - **어디서나 실행**: 개발 서버, 빌드 결과 파일 더블클릭(`file://`), 블로그 글 삽입 모두 지원합니다

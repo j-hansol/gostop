@@ -371,10 +371,13 @@ function doPlay(rec: Recorder, action: Action) {
   doFlip(rec);
 }
 
+/**
+ * 바닥의 같은 월 3장을 4번째 패로 먹을 때. 뻑이든 처음 배분 때 깔린 3장이든 뻑 먹기와 같이
+ * 상대 피 1장을 받고, 자기가 싼 뻑(자뻑)이면 2장을 받는다.
+ */
 function takePpeok(rec: Recorder, m: number) {
   const s = rec.s;
   const owner = s.ppeokOwner[m];
-  if (owner === undefined) return;
   const self = owner === s.current;
   s.ctx!.steal += self ? 2 : 1;
   delete s.ppeokOwner[m];

@@ -9,7 +9,7 @@
   /* 손패·바닥·획득 패가 모두 같은 크기. 세로 = 카드 6장 높이 + 여백 */
   --cw: clamp(30px, min(5.2vw, calc((100dvh - 170px) / 9.6)), 96px);
   --ch: calc(var(--cw) * 1.6);
-  --panel-w: clamp(128px, 12vw, 168px);
+  --panel-w: clamp(140px, 13vw, 180px);
   --c-godori: #f6c51d;
   --c-hongdan: #ff3b3b;
   --c-cheongdan: #3d86ff;
@@ -56,7 +56,13 @@ button:disabled { opacity: 0.5; cursor: default; }
   grid-template-rows: auto auto 1fr auto auto;
   background: radial-gradient(ellipse at center, #2a7a49 0%, var(--felt) 45%, var(--felt-dark) 100%);
   position: relative;
+  /* 게임 중 클릭·끌기로 글자나 그림이 선택되지 않게 한다 (모바일 길게 누르기 메뉴·탭 강조도 끔) */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
+#app img, #app svg { -webkit-user-drag: none; }
 
 .topbar {
   display: flex;
@@ -85,24 +91,36 @@ button:disabled { opacity: 0.5; cursor: default; }
   flex-direction: column;
   gap: 4px;
 }
+/* 정보 패널: 이름·보유금 → 큰 점수 + 목표 막대 → 점수 내역 → 상태 표시 */
 .info {
-  background: var(--panel);
-  border-radius: 10px;
-  padding: 6px 9px;
+  background: rgba(0, 0, 0, 0.42);
+  border-radius: 12px;
+  padding: 8px 10px;
   font-size: 12px;
-  border: 2px solid transparent;
+  border: 2px solid rgba(255, 255, 255, 0.08);
   transition: border-color 0.2s, box-shadow 0.2s;
 }
-.info.active { border-color: var(--gold); box-shadow: 0 0 14px rgba(246, 201, 69, 0.5); }
-.info .name { font-weight: 700; font-size: 13px; display: flex; justify-content: space-between; gap: 6px; }
+.info.active { border-color: var(--gold); box-shadow: 0 0 16px rgba(246, 201, 69, 0.45); }
+.info .name { font-weight: 700; font-size: 14px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .info .name span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.info .money { color: var(--gold); font-weight: 700; margin: 1px 0; }
-.info .score { font-size: 20px; font-weight: 900; line-height: 1.1; }
-.info .score small { font-size: 11px; font-weight: 400; color: var(--muted); }
-.info .badges { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
-.badge { background: var(--red); color: #fff; border-radius: 6px; padding: 0 6px; font-size: 11px; font-weight: 700; }
-.badge.gold { background: var(--gold); color: #2b1d00; }
-.badge.dark { background: #333; }
+.info .name .tag { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--muted); }
+.info .name .turn { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 800; color: #2b1d00; background: var(--gold); border-radius: 999px; padding: 1px 8px; }
+.info .money { color: var(--gold); font-weight: 700; font-size: 13px; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+.info .score { display: flex; align-items: baseline; gap: 3px; line-height: 1; font-variant-numeric: tabular-nums; }
+.info .score b { font-size: 30px; font-weight: 900; }
+.info .score span { font-size: 14px; font-weight: 700; }
+.info .score small { font-size: 12px; color: var(--muted); margin-left: 2px; }
+.info .score.ready b { color: var(--gold); text-shadow: 0 0 10px rgba(246, 201, 69, 0.6); }
+.info .bar { height: 5px; border-radius: 3px; background: rgba(255, 255, 255, 0.14); margin: 5px 0 4px; overflow: hidden; }
+.info .bar i { display: block; height: 100%; background: linear-gradient(90deg, #f6c945, #ff8a3d); border-radius: 3px; transition: width 0.3s; }
+.info .breakdown { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.info .breakdown b { color: var(--ink); }
+.info .badges { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+/* 상태 표시 (선·고·흔들기·폭탄·배수·뻑·위험) */
+.st { border-radius: 6px; padding: 1px 6px; font-size: 11px; font-weight: 800; line-height: 1.4; background: var(--red); color: #fff; }
+.st.gold { background: var(--gold); color: #2b1d00; }
+.st.dark { background: rgba(255, 255, 255, 0.16); color: var(--ink); }
+.st.warn { background: transparent; color: #ff8f8f; box-shadow: inset 0 0 0 1.5px #ff6b6b; }
 
 .hand { display: flex; gap: 6px; align-items: flex-end; min-height: var(--ch); }
 .hand.mini { min-height: 0; padding-left: 4px; }
@@ -110,14 +128,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .hand.mini .card:first-child { margin-left: 0; }
 
 /* 족보 진행 칩 */
-.combos { flex: 0 0 auto; width: 72px; display: flex; flex-direction: column; gap: 4px; padding-top: 16px; }
+.combos { flex: 0 0 auto; width: 78px; display: flex; flex-direction: column; gap: 4px; padding-top: 16px; }
 .chip {
   --cc: #fff;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   border-radius: 6px;
   padding: 2px 6px;
@@ -126,7 +144,7 @@ button:disabled { opacity: 0.5; cursor: default; }
   background: rgba(0, 0, 0, 0.35);
   white-space: nowrap;
 }
-.chip b { font-size: 11px; }
+.chip b { font-size: 12px; }
 .chip.open { opacity: 0.55; border-style: dashed; }
 .chip.likely { animation: chipPulse 1s ease-in-out infinite alternate; }
 .chip.done { background: var(--cc); color: #1a1a1a; }
@@ -141,23 +159,37 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 
 /* 획득 패: 손패와 같은 크기로 겹쳐 쌓는다 */
-.captured { display: flex; gap: 14px; flex: 1; align-items: flex-start; min-width: 0; min-height: calc(var(--ch) + 16px); }
-.cap-group { display: flex; flex-direction: column; gap: 2px; }
-.cap-label { font-size: 12px; color: var(--muted); height: 14px; line-height: 14px; }
-.cap-label b { color: var(--ink); }
-.cap-label small { color: var(--muted); font-size: 10px; }
+.captured { display: flex; gap: 10px; flex: 1; align-items: flex-start; min-width: 0; min-height: calc(var(--ch) + 30px); }
+/* 종류별 묶음: 옅은 판 위에 이름표와 패를 둔다 */
+.cap-group { display: flex; flex-direction: column; gap: 4px; padding: 4px 6px 6px; border-radius: 10px; background: rgba(0, 0, 0, 0.2); }
+.cap-label { display: flex; align-items: baseline; gap: 3px; height: 18px; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cap-label .nm { font-weight: 700; color: var(--ink); }
+.cap-label b { font-size: 16px; font-weight: 900; color: var(--ink); }
+.cap-label small { font-size: 11px; }
+.cap-label em { font-style: normal; font-size: 11px; font-weight: 800; color: #2b1d00; background: var(--gold); border-radius: 999px; padding: 0 6px; margin-left: 2px; }
+.cap-group.near .cap-label b { color: #ffb259; }
+.cap-group.scored { background: rgba(246, 201, 69, 0.12); box-shadow: inset 0 0 0 1px rgba(246, 201, 69, 0.35); }
+.cap-group.empty .cap-label { opacity: 0.6; }
 .cap-cards { --step: 0.4; display: flex; min-height: var(--ch); min-width: var(--cw); }
+/* 아직 한 장도 없는 묶음은 점선 자리만 표시 */
+.cap-group.empty .cap-cards { border: 1.5px dashed rgba(255, 255, 255, 0.18); border-radius: 6px; }
 .cap-cards .card { margin-left: calc(var(--w) * (var(--step) - 1)); }
 .cap-cards .card:first-child { margin-left: 0; }
 
 /* 유력·달성 족보에 속한 패 테두리 */
+/*
+ * 겹쳐 쌓인 획득 패는 카드마다 쌓임 맥락(z-index: 0)을 만들어, 테두리가 그 카드 안에서만 그려지게 한다.
+ * 그러면 뒤에 놓인(위에 겹친) 패가 앞 패의 테두리를 덮어, 테두리가 다른 패 위로 지나가지 않는다.
+ * 테두리와 빛도 카드 안쪽에만 그려 옆 패를 침범하지 않는다.
+ */
+.cap-cards .card { z-index: 0; }
 .card[data-combo]::before {
   content: '';
   position: absolute;
-  inset: -2px;
+  inset: 0;
   border-radius: inherit;
   border: 3px solid var(--cc, #fff);
-  box-shadow: 0 0 8px var(--cc, #fff);
+  box-shadow: inset 0 0 8px var(--cc, #fff);
   pointer-events: none;
   z-index: 1;
 }
@@ -246,14 +278,22 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 #hand-0 .card.playable { cursor: pointer; }
 #hand-0 .card.playable:hover { translate: 0 -10px; box-shadow: 0 8px 14px rgba(0, 0, 0, 0.5); }
-#hand-0 .card.match::after {
+/*
+ * 마우스를 올리면 패가 10px 올라가는데, 그러면 원래 패 아래쪽 10px가 빈 곳이 되어
+ * 그 자리를 누르면 패가 아니라 손패 칸이 눌리고(패가 안 나감) 올라갔다 내려갔다 깜빡인다.
+ * 패 아래로 보이지 않는 클릭 영역을 12px 늘려, 올라간 뒤에도 그 자리가 같은 패로 눌리게 한다.
+ */
+#hand-0 .card.playable::after {
   content: '';
   position: absolute;
-  inset: -3px;
-  border-radius: inherit;
-  border: 3px solid var(--gold);
-  pointer-events: none;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 12px;
 }
+/* 바닥과 맞는 패 테두리 (::after는 위 클릭 영역에 쓰므로 그림자로 그린다) */
+#hand-0 .card.match { box-shadow: 0 0 0 3px var(--gold), 0 2px 5px rgba(0, 0, 0, 0.45); }
+#hand-0 .card.match.playable:hover { box-shadow: 0 0 0 3px var(--gold), 0 8px 14px rgba(0, 0, 0, 0.5); }
 .card.choosable { cursor: pointer; animation: pulse 0.9s infinite alternate; }
 .card.choosable:hover { translate: 0 -6px; }
 @keyframes pulse {
@@ -371,10 +411,19 @@ table.breakdown tr.total td { font-size: 17px; color: var(--gold); border-bottom
   .meta { order: 3; flex-basis: 100%; gap: 10px; }
   .row-ai, .row-cap-me { flex-wrap: wrap; gap: 4px 6px; }
   .panel { width: auto; flex-direction: row; align-items: center; }
-  .info { padding: 4px 6px; font-size: 11px; }
-  .info .score { font-size: 16px; }
+  .info { padding: 4px 8px; font-size: 11px; min-width: 148px; }
+  .info .name { font-size: 13px; }
+  .info .money { font-size: 12px; margin: 0 0 2px; }
+  .info .score b { font-size: 22px; }
+  .info .bar { margin: 3px 0; }
+  .info .breakdown { font-size: 11px; }
+  .info .badges { margin-top: 3px; }
+  .cap-group { padding: 2px 3px 3px; gap: 2px; border-radius: 6px; }
+  .cap-label { height: 15px; font-size: 11px; }
+  .cap-label b { font-size: 13px; }
+  .hint { font-size: 11px; padding: 3px 10px; }
   .combos { width: auto; flex: 1; flex-direction: row; flex-wrap: wrap; padding-top: 0; }
-  .captured { flex-basis: 100%; gap: 6px; min-height: calc(var(--ch) * 0.8 + 16px); }
+  .captured { flex-basis: 100%; gap: 4px; min-height: calc(var(--ch) * 0.8 + 16px); }
   .captured .card { --w: calc(var(--cw) * 0.8); }
   .cap-cards { min-height: calc(var(--ch) * 0.8); min-width: calc(var(--cw) * 0.8); }
   .hand { gap: 3px; }

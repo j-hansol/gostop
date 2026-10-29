@@ -11,7 +11,7 @@ function seeded(seed: number) {
 const last = (f: Frame[]) => f[f.length - 1].state;
 
 /** 지정한 패를 배치하고 나머지는 상대 손패·더미에 채운 내 차례 장면 */
-function scene(o: { myHand: number[]; floor: number[]; myCap?: number[]; oppCap: number[] }): GameState {
+function scene(o: { myHand: number[]; floor: number[]; myCap?: number[]; oppCap: number[]; turn?: number }): GameState {
   const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(5) }));
   const myCap = o.myCap ?? [];
   const used = new Set([...o.myHand, ...o.floor, ...myCap, ...o.oppCap]);
@@ -26,6 +26,8 @@ function scene(o: { myHand: number[]; floor: number[]; myCap?: number[]; oppCap:
   s.current = 0;
   s.phase = 'play';
   s.ppeokOwner = {};
+  // 첫 턴이면 첫뻑(7점 금액) 가능성이 평가에 섞이므로, 그 영향을 빼고 보려면 turn을 준다
+  if (o.turn) s.players[0].turnsTaken = s.players[1].turnsTaken = o.turn;
   return s;
 }
 
@@ -79,7 +81,7 @@ describe('추천: 상대 저지', () => {
   });
 
   it('아무도 먹을 수 없는 죽은 패를 위험한 버림패보다 먼저 낸다', () => {
-    const s = scene({ myHand: [35, 3, 42, 13], floor: [6, 10, 30], myCap: [32, 33, 34], oppCap: [2] });
+    const s = scene({ myHand: [35, 3, 42, 13], floor: [6, 10, 30], myCap: [32, 33, 34], oppCap: [2], turn: 3 });
     expect(bestCard(s)).toBe(35);
     expect(best(s).reason).toContain('버려도 위험 없음');
   });
