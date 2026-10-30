@@ -9,7 +9,7 @@
 ![Tests](https://img.shields.io/badge/tests-40%20passed-brightgreen)
 ![AI Generated](https://img.shields.io/badge/AI%20Generated-Claude%20Code-D97757?logo=anthropic&logoColor=white)
 
-AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RULES.md](docs/RULES.md)를 참고하세요.
+AI와 1:1로 즐기는 고스톱(맞고) 웹 게임입니다. 규칙은 [docs/RULES.md](docs/RULES.md)를 참고하세요. 이 게임을 바탕으로 자기만의 게임을 만들려면 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)(개발 요청사항)를 보세요.
 
 > [!NOTE]
 > **AI 작성 고지** — 이 프로젝트의 코드, 테스트, 문서, 빌드 도구는 Anthropic의 AI인 **Claude**가 **[Claude Code](https://claude.com/claude-code)** 를 통해 작성했습니다. 사람은 게임 규칙과 요구사항을 정하고, 결과를 확인하며 수정 방향을 지시했습니다. AI가 작성한 코드에는 사람이 미처 검토하지 못한 오류가 있을 수 있습니다.
@@ -82,6 +82,7 @@ npm run bench:advice 300  # 추천대로 두는 나 vs AI 대전 비교
 | `tools/*.py` | 화투 일러스트 .ai 파일을 카드별 SVG로 변환하는 도구 |
 | `tests/` | 엔진·추천 테스트와 대전 시뮬레이션 |
 | `docs/RULES.md` | 고스톱 규칙 조사와 이 게임의 하우스 룰 |
+| `docs/REQUIREMENTS.md` | 이 게임을 다시 만들거나 바꿔 만들 때 쓰는 개발 요청사항 |
 
 저장 데이터는 브라우저 localStorage의 `gostop-save-v1` 키에 저장됩니다.
 
