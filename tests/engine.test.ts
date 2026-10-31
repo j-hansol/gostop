@@ -4,7 +4,8 @@ import { score } from '../src/engine/scoring';
 import { Action, cardLocations, currentScore, drawMission, Frame, GameState, goAdjusted, legalActions, Mission, missionLabel, newRound, PlayerIndex, settle, step } from '../src/engine/game';
 import { bestFloorChoice, chooseAction, decideGoStop } from '../src/engine/ai';
 import { publicView, recommend } from '../src/engine/advisor';
-import { applyResult, createAi, newProfile, pointRate } from '../src/engine/economy';
+import { applyResult, createAi, loadProfile, newProfile, pointRate } from '../src/engine/economy';
+import { AI_PERSONAS, BALANCED, personalityFromName, personaOf } from '../src/engine/personality';
 
 function seeded(seed: number) {
   return () => {
@@ -205,6 +206,123 @@ describe('획득 미션', () => {
     const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: m }));
     expect(publicView(s, 0).mission).toEqual(m);
     expect(recommend(publicView(s, 0), 4)).toBeDefined();
+  });
+});
+
+describe('AI 성격', () => {
+  const persona = (id: string) => AI_PERSONAS.find((p) => p.id === id)!;
+  const plain = CARDS.filter((c) => c.kind === 'pi' && c.piValue === 1).map((c) => c.id);
+  /** AI(0번)가 고/스톱을 고르는 장면. 카드 위치는 판단에 필요한 만큼만 맞춘다 */
+  function goScene(mine: number[], theirs: number[], goCount = 0) {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: null }));
+    s.current = 0;
+    s.players[0].captured = mine;
+    s.players[1].captured = theirs;
+    s.players[0].goCount = goCount;
+    return s;
+  }
+
+  it('생성: 직전과 다른 성격, 이름의 형용사가 성격과 맞다', () => {
+    const rng = seeded(21);
+    let ai = createAi(null, rng);
+    for (let i = 0; i < 200; i++) {
+      const next = createAi(ai, rng);
+      expect(next.personality).not.toBe(ai.personality);
+      expect(personalityFromName(next.name)).toBe(next.personality);
+      ai = next;
+    }
+  });
+
+  it('저장: 성격이 없던 데이터는 이름으로 복원하고, 모르는 이름은 기본 성격', () => {
+    const store = (ai: object) => ({ getItem: () => JSON.stringify({ ...newProfile(seeded(3)), ai }) }) as unknown as Storage;
+    expect(loadProfile(store({ name: '겁 없는 곰', money: 1, initialMoney: 1 }))!.ai.personality).toBe('gambler');
+    expect(loadProfile(store({ name: '이상한 곰', money: 1, initialMoney: 1 }))!.ai.personality).toBe('balanced');
+    expect(personaOf(undefined)).toBe(BALANCED);
+  });
+
+  it('성격을 주지 않으면 표준 기준과 같은 수를 둔다', () => {
+    const rng = seeded(31);
+    for (let g = 0; g < 5; g++) {
+      let s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng }));
+      while (s.phase !== 'end') {
+        const a = chooseAction(s);
+        expect(chooseAction(s, BALANCED)).toEqual(a);
+        s = last(step(s, a));
+      }
+    }
+  });
+
+  it('고/스톱: 같은 장면에서 성격마다 다르게 고른다', () => {
+    const seven = [0, 8, 28, 1, 5, 9, 13];
+    const s = goScene(seven, [plain[0], plain[1], plain[2], 4, 12]);
+    expect(decideGoStop(s, BALANCED)).toBe(true);
+    expect(decideGoStop(s, persona('gambler'))).toBe(true);
+    expect(decideGoStop(goScene(seven, [4, 12, 16, 20, 24, 29]), BALANCED)).toBe(false); // 상대 고도리
+    expect(decideGoStop(goScene(seven, [4, 12, 16, 20, 24, 29]), persona('gambler'))).toBe(false);
+    // 상대 3점: 신중파만 멈춘다
+    const three = goScene(seven, [21, 33, 37]);
+    expect(decideGoStop(three, BALANCED)).toBe(true);
+    expect(decideGoStop(three, persona('careful'))).toBe(false);
+    // 3고: 표준은 멈추고 승부사는 계속
+    const go3 = goScene(seven, [plain[0]], 3);
+    expect(decideGoStop(go3, BALANCED)).toBe(false);
+    expect(decideGoStop(go3, persona('gambler'))).toBe(true);
+  });
+
+  it('고/스톱: 족보꾼은 족보가 한 장 남았을 때만 고', () => {
+    const base = [0, 8, 28, 40, 16, 20, 24];
+    expect(decideGoStop(goScene([...base, 4, 12], [plain[0]]), persona('comboHunter'))).toBe(true); // 고도리 2/3
+    expect(decideGoStop(goScene(base, [plain[0], 4]), persona('comboHunter'))).toBe(false);
+  });
+
+  it('고/스톱: 피 수집가는 상대가 피박이면 스톱', () => {
+    const pis = plain.slice(0, 12);
+    expect(decideGoStop(goScene(pis, [plain[12]]), persona('piCollector'))).toBe(false);
+    expect(decideGoStop(goScene(pis, plain.slice(12, 20)), persona('piCollector'))).toBe(true);
+  });
+
+  it('바닥 패: 족보꾼은 띠, 피 수집가는 쌍피를 고른다', () => {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: null }));
+    s.current = 0;
+    s.players[0].captured = [5, 9]; // 홍단 2/3
+    s.players[1].captured = [];
+    s.phase = 'chooseFloor';
+    s.choice = { options: [1, 41], target: 'played' }; // 1월 홍단 띠, 11월 쌍피
+    expect(bestFloorChoice(s, persona('comboHunter'))).toBe(1);
+    s.players[0].captured = plain.slice(0, 6);
+    expect(bestFloorChoice(s, persona('piCollector'))).toBe(41);
+  });
+
+  it('바닥 패: 훼방꾼은 상대에게 필요한 패를 끊는다', () => {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: null }));
+    s.current = 0;
+    s.players[0].captured = [];
+    s.players[1].captured = [4, 12]; // 상대 고도리 2/3
+    s.phase = 'chooseFloor';
+    s.choice = { options: [29, 28], target: 'played' }; // 8월 기러기(상대 고도리), 8월 광
+    expect(bestFloorChoice(s, BALANCED)).toBe(28);
+    expect(bestFloorChoice(s, persona('spoiler'))).toBe(29);
+  });
+
+  it('피 수집가는 빼앗을 피가 없으면 보너스패를 아낀다', () => {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: null }));
+    s.current = 0;
+    s.phase = 'play';
+    s.players[0].hand = [48, ...s.players[0].hand.filter((c) => c !== 48 && c !== 49).slice(0, 5)];
+    s.players[0].captured = [];
+    s.players[1].captured = [];
+    const cardOf = (a: Action) => (a.type === 'play' ? a.card : null);
+    expect(cardOf(chooseAction(s, persona('piCollector')))).not.toBe(48);
+    expect(cardOf(chooseAction(s, BALANCED))).toBe(48);
+    s.players[1].captured = [plain[0]];
+    expect(cardOf(chooseAction(s, persona('piCollector')))).toBe(48);
+  });
+
+  it('모든 성격으로 끝까지 두어도 카드가 보존되고 판이 끝난다', () => {
+    const rng = seeded(41);
+    for (const p of AI_PERSONAS) {
+      for (let g = 0; g < 3; g++) playGame(rng, (s) => chooseAction(s, p), (g % 2) as PlayerIndex);
+    }
   });
 });
 

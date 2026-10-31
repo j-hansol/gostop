@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "sim": "vite-node tests/sim.bench.ts",
-    "bench:advice": "vite-node tests/advisor.bench.ts"
+    "bench:advice": "vite-node tests/advisor.bench.ts",
+    "bench:persona": "vite-node tests/persona.bench.ts"
   },
   "devDependencies": {
     "typescript": "5.6.3",

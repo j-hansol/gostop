@@ -1,4 +1,5 @@
 import type { PlayerIndex } from './game';
+import { AI_PERSONAS, PersonalityId, personalityFromName } from './personality';
 
 export const INITIAL_MONEY = 50000;
 export const FORFEIT_POINTS = 7;
@@ -10,6 +11,7 @@ export interface AiProfile {
   name: string;
   money: number;
   initialMoney: number;
+  personality: PersonalityId;
 }
 
 export interface Profile {
@@ -27,19 +29,15 @@ export interface Profile {
 export const pointRate = (level: number): number => (Math.floor(level / 5) + 1) * 100;
 export const nagariMultiplier = (streak: number): number => 2 ** streak;
 
-const ADJ = ['번개손', '느긋한', '능청스런', '눈치 빠른', '겁 없는', '꼼꼼한', '배짱 좋은', '수상한', '전설의', '조용한', '깐깐한', '허세 가득'];
 const NOUN = ['곰', '여우', '너구리', '호랑이', '두꺼비', '부엉이', '고양이', '거북이', '까치', '수달', '오소리', '독수리'];
-
-export function randomAiName(rng: () => number = Math.random, avoid?: string): string {
-  for (;;) {
-    const n = `${ADJ[Math.floor(rng() * ADJ.length)]} ${NOUN[Math.floor(rng() * NOUN.length)]}`;
-    if (n !== avoid) return n;
-  }
-}
 
 export function createAi(prev: AiProfile | null, rng: () => number = Math.random): AiProfile {
   const money = prev ? Math.round((prev.initialMoney * (1 + rng() * 0.4)) / 100) * 100 : INITIAL_MONEY;
-  return { name: randomAiName(rng, prev?.name), money, initialMoney: money };
+  // 직전 AI와 다른 성격을 고르고, 이름의 형용사는 그 성격에 맞춘다
+  const pool = AI_PERSONAS.filter((p) => p.id !== prev?.personality);
+  const persona = pool[Math.floor(rng() * pool.length)];
+  const name = `${persona.adjectives[Math.floor(rng() * persona.adjectives.length)]} ${NOUN[Math.floor(rng() * NOUN.length)]}`;
+  return { name, money, initialMoney: money, personality: persona.id };
 }
 
 export function newProfile(rng: () => number = Math.random): Profile {
@@ -133,6 +131,7 @@ export function loadProfile(storage: Storage | undefined): Profile | null {
     if (!raw) return null;
     const p = JSON.parse(raw) as Profile;
     if (p?.version !== 1 || typeof p.playerMoney !== 'number' || !p.ai) return null;
+    p.ai.personality ??= personalityFromName(p.ai.name);
     return p;
   } catch {
     return null;

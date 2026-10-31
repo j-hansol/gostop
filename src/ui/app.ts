@@ -9,6 +9,7 @@ import {
 } from '../engine/economy';
 import { backSvg, cardSvg, dummySvg, preloadCards } from './cardArt';
 import { actionLabel, Advice, adviseGoStop, adviseGukjin, publicView, recommend } from '../engine/advisor';
+import { AI_PERSONAS, personaOf } from '../engine/personality';
 import { isMuted, setMuted, sfx, unlockAudio } from './sound';
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
@@ -104,6 +105,7 @@ export class App {
       `<tr><td>레벨</td><td>Lv.${p.level} (점당 ${won(pointRate(p.level))})</td></tr>` +
       `<tr><td>내 보유금</td><td>${won(p.playerMoney)}</td></tr>` +
       `<tr><td>상대</td><td>${p.ai.name} · ${won(p.ai.money)}</td></tr>` +
+      `<tr><td>상대 성격</td><td>${personaOf(p.ai.personality).label}</td></tr>` +
       `<tr><td>전적</td><td>${p.stats.wins}승 ${p.stats.losses}패 ${p.stats.draws}무</td></tr>` +
       (p.nagariStreak ? `<tr><td>나가리 배수</td><td>×${nagariMultiplier(p.nagariStreak)}</td></tr>` : '') +
       `</table>` +
@@ -292,7 +294,7 @@ export class App {
         this.busy = true;
         this.render(s);
         await this.wait(s.phase === 'play' ? 550 : 400, myGen);
-        await this.apply(chooseAction(s), myGen);
+        await this.apply(chooseAction(s, personaOf(this.profile.ai.personality)), myGen);
         continue;
       }
       // 내 차례
@@ -436,6 +438,8 @@ export class App {
           `<div class="big">Lv.${settlement.levelBefore} → Lv.${settlement.levelAfter}</div>` +
           `<table class="breakdown">` +
           `<tr><td>새 상대</td><td>${settlement.newAi.name}</td></tr>` +
+          `<tr><td>성격</td><td>${personaOf(settlement.newAi.personality).label}</td></tr>` +
+          `<tr><td colspan="2">${personaOf(settlement.newAi.personality).desc}</td></tr>` +
           `<tr><td>상대 보유금</td><td>${won(settlement.newAi.money)}</td></tr>` +
           `<tr><td>점당 금액</td><td>${won(pointRate(settlement.levelAfter))}</td></tr></table>`,
         [{ label: '새 상대와 대결', value: 'ok' }],
@@ -865,7 +869,7 @@ export class App {
       const active = !!s && s.phase !== 'end' && s.current === p;
       $(`info-${p}`).innerHTML =
         `<div class="name"><span>${name}</span>${active ? '<span class="turn">차례</span>' : p === 0 ? `<span class="tag">Lv.${this.profile.level}</span>` : '<span class="tag">AI</span>'}</div>` +
-        `<div class="money">${won(money)}</div>` +
+        `<div class="money"><span>${won(money)}</span>${p === 1 ? `<span class="persona" title="${personaOf(this.profile.ai.personality).desc}">${personaOf(this.profile.ai.personality).label}</span>` : ''}</div>` +
         `<div class="score${sc >= goal ? ' ready' : ''}"><b>${sc}</b><span>점</span><small>/ ${goal}</small></div>` +
         `<div class="bar"><i style="width:${pct}%"></i></div>` +
         `<div class="breakdown">${breakdown}</div>` +
@@ -918,6 +922,7 @@ export class App {
         <h3>획득 미션</h3><ul><li>판마다 30% 확률로 발생하며, 보너스패를 뺀 패 2~3장과 보상(+ 1~5 또는 x 2~5)을 판 시작 때 보여 줍니다.</li>
         <li>미션 패를 모두 가진 채 이기면 모든 배수를 계산한 최종 점수에 보상을 적용합니다. 고/스톱 기준 점수에는 영향이 없습니다.</li>
         <li>판정은 판이 끝날 때 가진 패로 합니다. 패자가 완료한 미션과 총통·삼연뻑 승리에는 적용하지 않습니다.</li></ul>
+        <h3>상대 성격</h3><ul>${AI_PERSONAS.map((p) => `<li><b>${p.label}</b>: ${p.desc}</li>`).join('')}</ul>
         <h3>금액</h3><ul><li>점당 금액 = (레벨÷5의 몫 + 1) × 100원</li>
         <li>AI가 파산하면 레벨 업, 새 AI는 이전 AI 시작 금액의 0~40% 증액</li>
         <li>내가 파산하면 처음부터 다시 시작</li></ul></div>`,

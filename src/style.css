@@ -106,6 +106,8 @@ button:disabled { opacity: 0.5; cursor: default; }
 .info .name .tag { flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--muted); }
 .info .name .turn { flex-shrink: 0; white-space: nowrap; font-size: 11px; font-weight: 800; color: #2b1d00; background: var(--gold); border-radius: 999px; padding: 1px 8px; }
 .info .money { color: var(--gold); font-weight: 700; font-size: 13px; margin: 2px 0 4px; font-variant-numeric: tabular-nums; }
+.info .money { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; white-space: nowrap; }
+.info .persona { font-size: 11px; font-weight: 700; color: var(--ink); }
 .info .score { display: flex; align-items: baseline; gap: 3px; line-height: 1; font-variant-numeric: tabular-nums; }
 .info .score b { font-size: 30px; font-weight: 900; }
 .info .score span { font-size: 14px; font-weight: 700; }
