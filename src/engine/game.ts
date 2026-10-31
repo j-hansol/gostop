@@ -54,7 +54,18 @@ export interface RoundResult {
   goBonusText?: string;
   afterGo: number;
   multipliers: Multiplier[];
+  /** 승자가 미션을 완료해 최종 점수에 반영했는지 */
+  missionDone?: boolean;
+  /** 미션 반영 전 점수 */
+  beforeMission?: number;
   final: number;
+}
+
+/** 획득 미션: cards를 모두 가진 채 이기면 최종 점수에 op와 value를 적용한다 */
+export interface Mission {
+  cards: number[];
+  op: 'add' | 'mul';
+  value: number;
 }
 
 export interface GameState {
@@ -70,6 +81,8 @@ export interface GameState {
   ctx: TurnCtx | null;
   choice: { options: number[]; target: 'played' | 'flipped' } | null;
   nagariMultiplier: number;
+  /** 이번 판의 획득 미션 (공개 정보). 없으면 null */
+  mission: Mission | null;
   result: RoundResult | null;
 }
 
@@ -150,7 +163,24 @@ export interface NewRoundOptions {
   dealer: PlayerIndex;
   nagariMultiplier: number;
   rng?: Rng;
+  /** 미션을 직접 지정한다 (테스트용). 생략하면 무작위로 정한다 */
+  mission?: Mission | null;
 }
+
+export const MISSION_CHANCE = 0.3;
+
+/** 판마다 30% 확률로 미션을 만든다. 보너스패를 뺀 패 2~3장, 더하기 1~5 또는 곱하기 2~5 */
+export function drawMission(rng: Rng): Mission | null {
+  if (rng() >= MISSION_CHANCE) return null;
+  const pool = Array.from({ length: TOTAL_CARDS }, (_, i) => i).filter((id) => !isBonus(id));
+  const cards = shuffle(pool, rng).slice(0, rng() < 0.5 ? 2 : 3);
+  return rng() < 0.5
+    ? { cards, op: 'add', value: 1 + Math.floor(rng() * 5) }
+    : { cards, op: 'mul', value: 2 + Math.floor(rng() * 4) };
+}
+
+export const missionLabel = (m: Mission): string => `${m.op === 'add' ? '+' : 'x'} ${m.value}`;
+export const missionDone = (m: Mission, captured: number[]): boolean => m.cards.every((id) => captured.includes(id));
 
 export function newRound(opts: NewRoundOptions): Frame[] {
   const rng = opts.rng ?? Math.random;
@@ -178,6 +208,7 @@ export function newRound(opts: NewRoundOptions): Frame[] {
     ctx: null,
     choice: null,
     nagariMultiplier: opts.nagariMultiplier,
+    mission: opts.mission !== undefined ? opts.mission : drawMission(rng),
     result: null,
   };
   const rec = new Recorder(s);
@@ -621,8 +652,15 @@ export function settle(s: GameState, winner: PlayerIndex): RoundResult {
   if (detail.yeolCount >= MEONGBAK_YEOL) multipliers.push({ label: '멍박', factor: 2 });
   if (l.goCount > 0) multipliers.push({ label: '고박', factor: 2 });
   if (s.nagariMultiplier > 1) multipliers.push({ label: '나가리', factor: s.nagariMultiplier });
-  const final = multipliers.reduce((acc, m) => acc * m.factor, go.value);
-  return { winner, detail, base: detail.total, goBonusText: go.text, afterGo: go.value, multipliers, final };
+  const beforeMission = multipliers.reduce((acc, m) => acc * m.factor, go.value);
+  const result: RoundResult = { winner, detail, base: detail.total, goBonusText: go.text, afterGo: go.value, multipliers, final: beforeMission };
+  // 미션은 모든 배수를 계산한 뒤 맨 마지막에 적용한다. 패자가 완료한 미션은 효과가 없다
+  if (s.mission && missionDone(s.mission, w.captured)) {
+    result.missionDone = true;
+    result.beforeMission = beforeMission;
+    result.final = s.mission.op === 'add' ? beforeMission + s.mission.value : beforeMission * s.mission.value;
+  }
+  return result;
 }
 
 function endWin(s: GameState, winner: PlayerIndex) {

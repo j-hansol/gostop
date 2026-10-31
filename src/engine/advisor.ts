@@ -3,9 +3,9 @@
 // 상대 손패와 더미는 모르는 카드를 무작위로 나눠 채운 가상 배치를 여러 개 만들어 평균을 낸다.
 // 그래서 상대 패나 더미 순서를 들여다볼 방법이 구조적으로 없다.
 import { card, isBonus, monthOf, TOTAL_CARDS } from './cards';
-import { chooseAction, decideGoStop, decideGukjin, evaluate, potential } from './ai';
+import { chooseAction, decideGoStop, decideGukjin, evaluate, potential, worth } from './ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, gukjinOptions, legalActions, PlayerIndex, PlayerState, Rng, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, gukjinOptions, legalActions, Mission, missionDone, missionLabel, PlayerIndex, PlayerState, Rng, step, WIN_SCORE,
 } from './game';
 import { comboProgress, maxPiCount, score } from './scoring';
 import { FIRST_PPEOK_POINTS } from './economy';
@@ -30,6 +30,7 @@ export interface PublicView {
   ctx: GameState['ctx'];
   choice: GameState['choice'];
   nagariMultiplier: number;
+  mission: Mission | null;
 }
 
 const other = (p: PlayerIndex): PlayerIndex => (p === 0 ? 1 : 0);
@@ -54,6 +55,7 @@ export function publicView(s: GameState, me: PlayerIndex): PublicView {
     ctx: structuredClone(s.ctx),
     choice: structuredClone(s.choice),
     nagariMultiplier: s.nagariMultiplier,
+    mission: structuredClone(s.mission),
   };
 }
 
@@ -83,7 +85,7 @@ function determinize(v: PublicView, rng: Rng): GameState {
   return {
     deck, floor: [...v.floor], players, current: v.current, dealer: v.dealer, phase: v.phase,
     ppeokOwner: { ...v.ppeokOwner }, ctx: structuredClone(v.ctx), choice: structuredClone(v.choice),
-    nagariMultiplier: v.nagariMultiplier, result: null,
+    nagariMultiplier: v.nagariMultiplier, mission: structuredClone(v.mission), result: null,
   };
 }
 
@@ -191,9 +193,9 @@ function floorOutlook(s: GameState, me: PlayerIndex): number {
     for (let i = 0; i < 4; i++) if (!known.has((m - 1) * 4 + i)) u++;
     const inHand = hand.some((id) => monthOf(id) === m);
     if (inHand && u === 0) {
-      v += 0.8 * (potential([...mine, ...pile], theirs) - potential(mine, theirs));
+      v += 0.8 * (worth(s, [...mine, ...pile], theirs) - worth(s, mine, theirs));
     } else if (!inHand && u > 0) {
-      const lose = potential([...theirs, ...pile], mine) - potential(theirs, mine);
+      const lose = worth(s, [...theirs, ...pile], mine) - worth(s, theirs, mine);
       v -= 0.7 * holdChance(u, U, k) * lose;
     }
   }
@@ -216,7 +218,7 @@ function myFloorChoice(s: GameState, me: PlayerIndex): number {
   let bestV = -Infinity;
   for (const c of s.choice!.options) {
     const m2 = [...mine, c];
-    const v = potential(m2, theirs) - 0.9 * potential(theirs, m2) - 0.9 * threatValue(theirs, m2, hand);
+    const v = worth(s, m2, theirs) - 0.9 * worth(s, theirs, m2) - 0.9 * threatValue(theirs, m2, hand);
     if (v > bestV) { bestV = v; best = c; }
   }
   return best;
@@ -249,7 +251,7 @@ function opponentReply(s: GameState): Action {
   if (p.hand.length === 0) return { type: 'dummy' };
   const mine = p.captured;
   const theirs = s.players[other(opp)].captured;
-  const base = potential(mine, theirs);
+  const base = worth(s, mine, theirs);
   let best: Action = { type: 'play', card: p.hand[0] };
   let bestV = -Infinity;
   for (const c of p.hand) {
@@ -257,10 +259,10 @@ function opponentReply(s: GameState): Action {
     let take: number[] = [];
     if (pile.length === 1 || pile.length === 3) take = [c, ...pile];
     else if (pile.length === 2) {
-      const pick = pile.reduce((a, b) => (potential([...mine, c, a], theirs) >= potential([...mine, c, b], theirs) ? a : b));
+      const pick = pile.reduce((a, b) => (worth(s, [...mine, c, a], theirs) >= worth(s, [...mine, c, b], theirs) ? a : b));
       take = [c, pick];
     }
-    const v = take.length ? potential([...mine, ...take], theirs) - base : -0.2 - potential([...theirs, c], mine) * 0.05;
+    const v = take.length ? worth(s, [...mine, ...take], theirs) - base : -0.2 - potential([...theirs, c], mine) * 0.05;
     if (v > bestV) { bestV = v; best = { type: 'play', card: c, shake: canShake(s, c) }; }
   }
   return best;
@@ -409,6 +411,11 @@ function describe(v: PublicView, action: Action, st: Stats, others: Stats[], wor
     const before = comboProgress(mine, theirs).filter((c) => c.state === 'done').map((c) => c.key);
     const done = comboProgress([...mine, ...take], theirs).filter((c) => c.state === 'done' && !before.includes(c.key));
     for (const c of done) parts.unshift(`${c.label} 완성`);
+    // 상대가 미션 패를 이미 가졌으면 막힌 미션이라 적지 않는다
+    const m = v.mission;
+    if (m && take.some((id) => m.cards.includes(id)) && !m.cards.some((id) => theirs.includes(id))) {
+      parts.unshift(missionDone(m, [...mine, ...take]) ? `미션 완성 (${missionLabel(m)})` : '미션 패 획득');
+    }
     if (!done.length && parts.length < 2) {
       // 낸 패도 함께 먹으므로 낸 패까지 포함해 요약한다
       const kinds = take.map((id) => card(id));
@@ -531,7 +538,8 @@ export function adviseGoStop(v: PublicView): GoStopAdvice {
   const mine = currentScore(s, me);
   const go = decideGoStop(s);
   let reason: string;
-  if (v.deckCount <= 4) reason = '남은 더미가 적어 더 먹기 어렵습니다';
+  if (v.mission?.op === 'mul' && missionDone(v.mission, p.captured)) reason = `미션을 완료해 스톱하면 최종 점수 ${missionLabel(v.mission)}입니다`;
+  else if (v.deckCount <= 4) reason = '남은 더미가 적어 더 먹기 어렵습니다';
   else if (opp >= 5) reason = `상대가 ${opp}점이라 고박 위험이 큽니다`;
   else if (p.goCount >= 2 && opp >= 3) reason = `이미 ${p.goCount}고이고 상대가 ${opp}점입니다`;
   else if (mine >= 15) reason = '점수가 충분히 높습니다';

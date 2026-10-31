@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CARDS, monthOf, TOTAL_CARDS } from '../src/engine/cards';
 import { score } from '../src/engine/scoring';
-import { Action, cardLocations, currentScore, Frame, GameState, goAdjusted, legalActions, newRound, PlayerIndex, settle, step } from '../src/engine/game';
-import { chooseAction } from '../src/engine/ai';
+import { Action, cardLocations, currentScore, drawMission, Frame, GameState, goAdjusted, legalActions, Mission, missionLabel, newRound, PlayerIndex, settle, step } from '../src/engine/game';
+import { bestFloorChoice, chooseAction, decideGoStop } from '../src/engine/ai';
+import { publicView, recommend } from '../src/engine/advisor';
 import { applyResult, createAi, newProfile, pointRate } from '../src/engine/economy';
 
 function seeded(seed: number) {
@@ -105,7 +106,7 @@ describe('game flow', () => {
   });
 
   it('피박·광박·고박 배수', () => {
-    const s = last(newRound({ dealer: 0, nagariMultiplier: 2, rng: seeded(1) }));
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 2, rng: seeded(1), mission: null }));
     const plain = CARDS.filter((c) => c.kind === 'pi' && c.piValue === 1).map((c) => c.id);
     s.players[0].captured = [0, 8, 28, ...plain.slice(0, 10)];
     s.players[1].captured = [plain[10]];
@@ -114,6 +115,96 @@ describe('game flow', () => {
     expect(r.base).toBe(4);
     expect(r.multipliers.map((m) => m.label)).toEqual(['피박', '광박', '고박', '나가리']);
     expect(r.final).toBe(4 * 2 * 2 * 2 * 2);
+  });
+});
+
+describe('획득 미션', () => {
+  const plain = CARDS.filter((c) => c.kind === 'pi' && c.piValue === 1).map((c) => c.id);
+  /** 내가 이기는 장면: 3광 3점 + 피 10장 1점 = 4점 ×피박×광박 = 16점 */
+  function scene(mission: Mission | null, mine: number[] = [], theirs: number[] = []) {
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission }));
+    s.players[0].captured = [0, 8, 28, ...plain.slice(0, 10), ...mine];
+    s.players[1].captured = [plain[10], ...theirs];
+    return s;
+  }
+
+  it('발생 확률은 약 30%, 패와 보상은 정해진 범위', () => {
+    const rng = seeded(11);
+    let n = 0;
+    const N = 20000;
+    for (let i = 0; i < N; i++) {
+      const m = drawMission(rng);
+      if (!m) continue;
+      n++;
+      expect([2, 3]).toContain(m.cards.length);
+      expect(new Set(m.cards).size).toBe(m.cards.length);
+      expect(m.cards.some((id) => CARDS[id].bonus)).toBe(false);
+      if (m.op === 'add') expect(m.value >= 1 && m.value <= 5).toBe(true);
+      else expect(m.value >= 2 && m.value <= 5).toBe(true);
+    }
+    expect(n / N).toBeGreaterThan(0.28);
+    expect(n / N).toBeLessThan(0.32);
+  });
+
+  it('표시 형식', () => {
+    expect(missionLabel({ cards: [1, 2], op: 'add', value: 3 })).toBe('+ 3');
+    expect(missionLabel({ cards: [1, 2], op: 'mul', value: 4 })).toBe('x 4');
+  });
+
+  it('완료하면 모든 배수 뒤 최종 점수에 적용', () => {
+    expect(settle(scene(null), 0).final).toBe(16);
+    const add = settle(scene({ cards: [0, 8], op: 'add', value: 3 }), 0);
+    expect(add.missionDone).toBe(true);
+    expect(add.beforeMission).toBe(16);
+    expect(add.final).toBe(19);
+    expect(settle(scene({ cards: [0, 8, 28], op: 'mul', value: 3 }), 0).final).toBe(48);
+  });
+
+  it('미완료이거나 패자만 완료하면 미적용', () => {
+    expect(settle(scene({ cards: [0, 4], op: 'mul', value: 5 }), 0).final).toBe(16);
+    const r = settle(scene({ cards: [4, 12], op: 'mul', value: 5 }, [], [4, 12]), 0);
+    expect(r.missionDone).toBeUndefined();
+    expect(r.final).toBe(16);
+  });
+
+  it('미션 패를 빼앗기면 미완료, 빼앗아 오면 완료', () => {
+    const m: Mission = { cards: [plain[0], plain[10]], op: 'add', value: 2 };
+    const lost = scene(m);
+    lost.players[0].captured = lost.players[0].captured.filter((id) => id !== plain[10]);
+    expect(settle(lost, 0).missionDone).toBeUndefined();
+    const won = scene(m, [plain[10]]);
+    won.players[1].captured = [];
+    expect(settle(won, 0).missionDone).toBe(true);
+  });
+
+  it('고/스톱 기준 점수에는 영향이 없다', () => {
+    const s = scene({ cards: [0, 8], op: 'mul', value: 5 });
+    expect(currentScore(s, 0)).toBe(4);
+  });
+
+  it('AI는 곱하기 미션을 완료하면 스톱한다', () => {
+    const s = scene({ cards: [0, 8], op: 'mul', value: 2 });
+    s.current = 0;
+    s.deck = s.deck.length ? s.deck : [1, 2, 3, 4, 5];
+    expect(decideGoStop(s)).toBe(false);
+  });
+
+  it('AI는 값이 같으면 미션 패를 고른다', () => {
+    const [a, b] = [plain[0], plain[1]];
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: { cards: [b, plain[5]], op: 'mul', value: 5 } }));
+    s.current = 0;
+    s.players[0].captured = [];
+    s.players[1].captured = [];
+    s.phase = 'chooseFloor';
+    s.choice = { options: [a, b], target: 'played' };
+    expect(bestFloorChoice(s)).toBe(b);
+  });
+
+  it('미션은 공개 정보에 포함되고 추천이 동작한다', () => {
+    const m: Mission = { cards: [0, 1], op: 'mul', value: 5 };
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: m }));
+    expect(publicView(s, 0).mission).toEqual(m);
+    expect(recommend(publicView(s, 0), 4)).toBeDefined();
   });
 });
 

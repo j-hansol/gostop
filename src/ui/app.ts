@@ -1,7 +1,7 @@
 import { card, isBonus, monthOf } from '../engine/cards';
 import { chooseAction } from '../engine/ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, newRound, PIBAK_LIMIT, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, Mission, missionDone, missionLabel, newRound, PIBAK_LIMIT, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
 } from '../engine/game';
 import { COMBO_LABEL, comboProgress, maxPiCount } from '../engine/scoring';
 import {
@@ -69,6 +69,9 @@ export class App {
   /** 마지막으로 계산한 추천 (상태 객체가 같을 때만 재사용) */
   private advice: { state: GameState; adv: Advice | null } | null = null;
   private adviceTimer = 0;
+  /** 이번 판의 미션 (패에 표식을 붙일 때 쓴다) */
+  private mission: Mission | null = null;
+  private missionHtml = '';
 
   constructor() {
     let p = loadProfile(storage);
@@ -137,6 +140,7 @@ export class App {
       $('btn-close').classList.remove('hidden');
       $('btn-close').addEventListener('click', () => this.requestClose());
     }
+    for (const id of ['mission-side', 'mission-top']) $(id).addEventListener('click', () => void this.showMission());
     $('hand-0').addEventListener('click', (e) => this.onHandClick(e));
     $('floor').addEventListener('click', (e) => this.onFloorClick(e));
     document.addEventListener('pointerdown', () => unlockAudio(), { once: true });
@@ -249,8 +253,14 @@ export class App {
     $('fx').replaceChildren();
     this.renderMeta();
     const frames = newRound({ dealer: this.profile.dealer, nagariMultiplier: nagariMultiplier(this.profile.nagariStreak) });
+    this.mission = frames[0].state.mission;
     try {
       await this.playFrames(frames, myGen);
+      if (this.mission && this.state!.phase !== 'end') {
+        sfx.special();
+        this.banner(`미션 ${missionLabel(this.mission)}`, 'mid', this.mission.cards, 'small mission-banner', '모두 가져가서 이기면 최종 점수에 적용');
+        await this.wait(1700, myGen);
+      }
       const dealer = this.state!.dealer;
       this.banner(dealer === 0 ? '내가 선!' : '상대가 선', dealer === 0 ? 'me' : 'ai', undefined, 'small');
       await this.wait(700, myGen);
@@ -310,6 +320,7 @@ export class App {
           `<div class="big">${sc}점</div>` +
             `<p style="text-align:center">고를 하면 계속 진행합니다. 상대가 먼저 나면 <b>고박</b>(×2)을 씁니다.<br>` +
             `${p.goCount + 1}고 시 현재 점수 기준 <b>${next.value}점</b></p>` +
+            (s.mission && missionDone(s.mission, p.captured) ? `<div class="callout">미션 완료: 지금 이기면 최종 점수 <b>${missionLabel(s.mission)}</b></div>` : '') +
             (adviceOn ? (() => { const g = adviseGoStop(publicView(s, 0)); return `<p class="advice-line">💡 추천: <b>${g.go ? '고' : '스톱'}</b> · ${g.reason}</p>`; })() : ''),
           [{ label: `${p.goCount + 1}고!`, value: 'go', cls: 'red' }, { label: '스톱', value: 'stop' }],
         );
@@ -459,6 +470,11 @@ export class App {
       if (r.goBonusText) rows.push(`<tr><td>${r.goBonusText}</td><td>${r.afterGo}점</td></tr>`);
     }
     for (const m of r.multipliers) rows.push(`<tr><td>${m.label}</td><td>×${m.factor}</td></tr>`);
+    const mission = this.state?.mission;
+    if (mission) {
+      if (r.missionDone) rows.push(`<tr><td>미션 완료 ${missionLabel(mission)}</td><td>${r.beforeMission}점 → ${r.final}점</td></tr>`);
+      else rows.push(`<tr><td>미션 ${missionLabel(mission)}</td><td>${r.special ? '특수 승리 미적용' : '미완료'}</td></tr>`);
+    }
     rows.push(`<tr class="total"><td>최종 ${r.final}점 × ${won(st.rate)}</td><td>${won(st.amount)}</td></tr>`);
     let extra = '';
     if (st.paid < st.amount) extra += `<div class="callout">${meWin ? '상대' : '내'} 보유금이 부족해 <b>${won(st.paid)}</b>만 ${meWin ? '받았습니다' : '지급했습니다'}.</div>`;
@@ -544,7 +560,7 @@ export class App {
   private banner(text: string, side: 'me' | 'ai' | 'mid', cards?: number[], variant?: string, sub?: string) {
     const b = document.createElement('div');
     b.className = `banner ${side === 'mid' ? '' : side} ${variant ?? ''}`;
-    if (variant === 'small') b.style.fontSize = 'clamp(28px, 5vw, 56px)';
+    if (variant?.includes('small')) b.style.fontSize = 'clamp(28px, 5vw, 56px)';
     b.innerHTML = text + (sub ? `<span class="sub">${sub}</span>` : '') + (cards?.length ? this.cardRow(cards) : '');
     $('fx').appendChild(b);
     setTimeout(() => b.remove(), cards?.length ? 1600 : 1000);
@@ -590,8 +606,10 @@ export class App {
   private setFace(el: HTMLElement, key: string, face: Face) {
     if (this.faces.get(key) === face) return;
     this.faces.set(key, face);
-    el.innerHTML = face === 'dummy' ? dummySvg() : face === 'down' ? backSvg() : cardSvg(Number(key.slice(1)));
     const id = Number(key.slice(1));
+    // 뒷면에는 표식을 붙이지 않는다 (상대 손패와 더미가 드러나면 안 된다)
+    const flag = face === 'up' && this.mission?.cards.includes(id) ? '<span class="m-flag">★</span>' : '';
+    el.innerHTML = face === 'dummy' ? dummySvg() : face === 'down' ? backSvg() : cardSvg(id) + flag;
     el.title = face === 'up' ? card(id).name + (card(id).month ? ` (${card(id).month}월)` : '') : '';
   }
 
@@ -739,6 +757,7 @@ export class App {
     this.updateAdvice(s);
 
     this.renderInfo(s);
+    this.renderMission(s);
 
     // FLIP
     let moved = false;
@@ -769,6 +788,36 @@ export class App {
       anim.onfinish = () => el.classList.remove('animating');
     }
     return moved;
+  }
+
+  /** 미션 상자. 패마다 누가 가졌는지 표시한다. 내용이 바뀔 때만 다시 그린다 */
+  private renderMission(s: GameState) {
+    const m = s.mission;
+    const cards = m?.cards.map((id) => {
+      const owner = s.players[0].captured.includes(id) ? 'me' : s.players[1].captured.includes(id) ? 'opp' : '';
+      return `<div class="m-card ${owner}"><div class="card">${cardSvg(id)}</div><span>${owner === 'me' ? '나' : owner === 'opp' ? '상대' : '&nbsp;'}</span></div>`;
+    }).join('') ?? '';
+    const html = m ? `<div class="m-head"><span class="m-title">미션</span><span class="m-value">${missionLabel(m)}</span></div><div class="m-cards">${cards}</div>` : '';
+    const done = !!m && (missionDone(m, s.players[0].captured) || missionDone(m, s.players[1].captured));
+    for (const id of ['mission-side', 'mission-top']) {
+      const el = $(id);
+      el.classList.toggle('hidden', !m);
+      el.classList.toggle('done', done);
+      if (html !== this.missionHtml) el.innerHTML = html;
+    }
+    this.missionHtml = html;
+  }
+
+  private async showMission() {
+    const s = this.state;
+    if (!s?.mission || !$('modal').classList.contains('hidden')) return;
+    await this.dialog(
+      `미션 ${missionLabel(s.mission)}`,
+      `<div class="mission-pick">${this.cardRow(s.mission.cards)}</div>` +
+        `<p style="text-align:center">이 패를 모두 가진 채 이기면 최종 점수에 <b>${missionLabel(s.mission)}</b> 적용합니다.<br>` +
+        `<small>판이 끝날 때 가지고 있는 패로 판정합니다. 상대가 먼저 가져가면 막힙니다.</small></p>`,
+      [{ label: '닫기', value: 'ok' }],
+    );
   }
 
   private renderMeta() {
@@ -866,7 +915,10 @@ export class App {
         <li>흔들기·폭탄: 점수 ×2 · 폭탄은 손 3장+바닥 1장 또는 손 2장+바닥 2장 · 총통·삼연뻑: 즉시 ${10}점 승리</li>
         <li>1고 +1, 2고 +2, 3고부터 ×2씩</li>
         <li>피박·광박·멍박·고박: 각 ×2</li></ul>
-        <h3>금액</h3><ul><li>점당 금액 = (레벨÷10의 몫 + 1) × 100원</li>
+        <h3>획득 미션</h3><ul><li>판마다 30% 확률로 발생하며, 보너스패를 뺀 패 2~3장과 보상(+ 1~5 또는 x 2~5)을 판 시작 때 보여 줍니다.</li>
+        <li>미션 패를 모두 가진 채 이기면 모든 배수를 계산한 최종 점수에 보상을 적용합니다. 고/스톱 기준 점수에는 영향이 없습니다.</li>
+        <li>판정은 판이 끝날 때 가진 패로 합니다. 패자가 완료한 미션과 총통·삼연뻑 승리에는 적용하지 않습니다.</li></ul>
+        <h3>금액</h3><ul><li>점당 금액 = (레벨÷5의 몫 + 1) × 100원</li>
         <li>AI가 파산하면 레벨 업, 새 AI는 이전 AI 시작 금액의 0~40% 증액</li>
         <li>내가 파산하면 처음부터 다시 시작</li></ul></div>`,
       [{ label: '닫기', value: 'ok' }],

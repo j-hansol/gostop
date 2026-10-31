@@ -32,7 +32,7 @@ function run(policy0: (s: GameState) => Action, seed: number) {
   const rng = seeded(seed);
   let win = 0, lose = 0, draw = 0, net = 0;
   for (let g = 0; g < games; g++) {
-    let s = last(newRound({ dealer: (g % 2) as PlayerIndex, nagariMultiplier: 1, rng }));
+    let s = last(newRound({ dealer: (g % 2) as PlayerIndex, nagariMultiplier: 1, rng, mission: null }));
     while (s.phase !== 'end') s = last(step(s, s.current === 0 ? policy0(s) : chooseAction(s)));
     const r = s.result!;
     if (r.winner === 0) { win++; net += r.final; } else if (r.winner === 1) { lose++; net -= r.final; } else draw++;

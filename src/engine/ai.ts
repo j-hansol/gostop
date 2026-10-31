@@ -1,5 +1,5 @@
 import { card, monthOf, TOTAL_CARDS } from './cards';
-import { Action, canShake, currentScore, Frame, GameState, gukjinOptions, legalActions, PlayerIndex, settle, step, WIN_SCORE } from './game';
+import { Action, canShake, currentScore, Frame, GameState, gukjinOptions, legalActions, Mission, missionDone, PlayerIndex, settle, step, WIN_SCORE } from './game';
 import { score } from './scoring';
 
 const GODORI = [4, 12, 29]; // 2·4·8월 새
@@ -28,6 +28,18 @@ export function potential(mine: number[], theirs: number[]): number {
   return v;
 }
 
+/** 미션 진행 가치. 상대가 미션 패를 한 장이라도 가졌으면 막힌 것으로 본다 */
+function missionWorth(m: Mission | null, mine: number[], theirs: number[]): number {
+  if (!m || m.cards.some((id) => theirs.includes(id))) return 0;
+  const reward = m.op === 'mul' ? (m.value - 1) * 2.5 : m.value * 0.6;
+  return (reward * m.cards.filter((id) => mine.includes(id)).length) / m.cards.length;
+}
+
+/** 획득 패의 가치에 미션 진행 가치를 더한 값 */
+export function worth(s: GameState, mine: number[], theirs: number[]): number {
+  return potential(mine, theirs) + missionWorth(s.mission, mine, theirs);
+}
+
 export function evaluate(s: GameState, me: PlayerIndex): number {
   if (s.phase === 'end' && s.result) {
     if (s.result.winner === me) return 1000 + s.result.final;
@@ -37,7 +49,7 @@ export function evaluate(s: GameState, me: PlayerIndex): number {
   const opp: PlayerIndex = me === 0 ? 1 : 0;
   const mine = s.players[me].captured;
   const theirs = s.players[opp].captured;
-  let v = potential(mine, theirs) - potential(theirs, mine) * 0.9;
+  let v = worth(s, mine, theirs) - worth(s, theirs, mine) * 0.9;
   if ((s.phase === 'goStop' || s.phase === 'gukjin') && s.current === me) v += 50;
   return v;
 }
@@ -57,7 +69,7 @@ function exposure(s: GameState, me: PlayerIndex, unseenCount: number): number {
     const prob = Math.min(1, (unseenOfMonth * oppHand) / unseenCount);
     const pile = s.floor.filter((id) => monthOf(id) === m);
     const theirs = s.players[opp].captured;
-    const gain = potential([...theirs, ...pile], s.players[me].captured) - potential(theirs, s.players[me].captured);
+    const gain = worth(s, [...theirs, ...pile], s.players[me].captured) - worth(s, theirs, s.players[me].captured);
     risk += prob * gain * 1.0;
   }
   return risk;
@@ -85,7 +97,7 @@ export function bestFloorChoice(s: GameState): number {
   let best = s.choice!.options[0];
   let bestV = -Infinity;
   for (const c of s.choice!.options) {
-    const v = potential([...mine, c], theirs);
+    const v = worth(s, [...mine, c], theirs);
     if (v > bestV) { bestV = v; best = c; }
   }
   return best;
@@ -120,6 +132,8 @@ export function decideGoStop(s: GameState): boolean {
   const p = s.players[me];
   const oppScore = currentScore(s, opp);
   const myScore = currentScore(s, me);
+  // 곱하기 미션을 완료했으면 미션 패를 빼앗기기 전에 확정한다
+  if (s.mission?.op === 'mul' && missionDone(s.mission, p.captured)) return false;
   if (s.deck.length <= 4) return false;
   if (oppScore >= 5) return false;
   if (p.goCount >= 2 && oppScore >= 3) return false;

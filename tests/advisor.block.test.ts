@@ -12,7 +12,7 @@ const last = (f: Frame[]) => f[f.length - 1].state;
 
 /** 지정한 패를 배치하고 나머지는 상대 손패·더미에 채운 내 차례 장면 */
 function scene(o: { myHand: number[]; floor: number[]; myCap?: number[]; oppCap: number[]; turn?: number }): GameState {
-  const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(5) }));
+  const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(5), mission: null }));
   const myCap = o.myCap ?? [];
   const used = new Set([...o.myHand, ...o.floor, ...myCap, ...o.oppCap]);
   const rest = cardLocations(s).filter((id) => !used.has(id));
