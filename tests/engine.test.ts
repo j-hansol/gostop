@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { CARDS, monthOf, TOTAL_CARDS } from '../src/engine/cards';
 import { score } from '../src/engine/scoring';
-import { Action, cardLocations, currentScore, drawMission, Frame, GameState, goAdjusted, legalActions, Mission, missionLabel, newRound, PlayerIndex, settle, step } from '../src/engine/game';
-import { bestFloorChoice, chooseAction, decideGoStop } from '../src/engine/ai';
+import { Action, cardLocations, currentScore, drawMission, Frame, GameState, goAdjusted, legalActions, Mission, missionBlocked, missionDone, missionGroup, missionLabel, newRound, PlayerIndex, settle, step } from '../src/engine/game';
+import { bestFloorChoice, chooseAction, decideGoStop, worth } from '../src/engine/ai';
 import { publicView, recommend } from '../src/engine/advisor';
 import { applyResult, createAi, loadProfile, newProfile, pointRate } from '../src/engine/economy';
 import { AI_PERSONAS, BALANCED, personalityFromName, personaOf } from '../src/engine/personality';
@@ -191,7 +191,7 @@ describe('획득 미션', () => {
   });
 
   it('AI는 값이 같으면 미션 패를 고른다', () => {
-    const [a, b] = [plain[0], plain[1]];
+    const [a, b] = [plain[0], plain[2]];
     const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: { cards: [b, plain[5]], op: 'mul', value: 5 } }));
     s.current = 0;
     s.players[0].captured = [];
@@ -199,6 +199,42 @@ describe('획득 미션', () => {
     s.phase = 'chooseFloor';
     s.choice = { options: [a, b], target: 'played' };
     expect(bestFloorChoice(s)).toBe(b);
+  });
+
+  it('비슷한 피: 1~11월 일반 피 11쌍, 쌍피와 다른 패는 해당 없음', () => {
+    const pairs = [[2, 3], [6, 7], [10, 11], [14, 15], [18, 19], [22, 23], [26, 27], [30, 31], [34, 35], [38, 39], [42, 43]];
+    for (const pair of pairs) for (const id of pair) expect(missionGroup(id)).toEqual(pair);
+    for (const id of [0, 1, 4, 32, 41, 47]) expect(missionGroup(id)).toEqual([id]);
+  });
+
+  it('비슷한 피: 같은 쌍은 한 미션에 함께 뽑히지 않는다', () => {
+    const rng = seeded(13);
+    for (let i = 0; i < 5000; i++) {
+      const m = drawMission(rng);
+      if (!m) continue;
+      expect(new Set(m.cards.map((id) => missionGroup(id)[0])).size).toBe(m.cards.length);
+    }
+  });
+
+  it('비슷한 피: 둘 중 한 장이면 완료, 다른 쪽 한 장을 잃어도 인정', () => {
+    const m: Mission = { cards: [2, 0], op: 'add', value: 2 };
+    expect(missionDone(m, [0, 2])).toBe(true);
+    expect(missionDone(m, [0, 3])).toBe(true);
+    expect(missionDone(m, [0])).toBe(false);
+    // 22번은 패자에게 있고 승자는 짝인 23번을 가졌다: 피가 1장 늘어 5점 ×피박×광박 = 20점, 미션 x 2
+    expect(settle(scene({ cards: [22, 0], op: 'mul', value: 2 }, [23]), 0).final).toBe(40);
+  });
+
+  it('비슷한 피: 상대가 두 장을 모두 가져야 막히고, 이미 가진 쌍은 가치를 더하지 않는다', () => {
+    const m: Mission = { cards: [2, 0], op: 'mul', value: 5 };
+    expect(missionBlocked(m, [2])).toBe(false);
+    expect(missionBlocked(m, [2, 3])).toBe(true);
+    const s = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: m }));
+    const none = last(newRound({ dealer: 0, nagariMultiplier: 1, rng: seeded(1), mission: null }));
+    expect(worth(s, [3], []) - worth(none, [3], [])).toBeGreaterThan(0);
+    expect(worth(s, [2, 3], []) - worth(none, [2, 3], [])).toBeCloseTo(worth(s, [3], []) - worth(none, [3], []));
+    expect(worth(s, [3], [2]) - worth(none, [3], [2])).toBeGreaterThan(0);
+    expect(worth(s, [0], [2, 3]) - worth(none, [0], [2, 3])).toBe(0);
   });
 
   it('미션은 공개 정보에 포함되고 추천이 동작한다', () => {

@@ -1,5 +1,5 @@
 import { card, monthOf, TOTAL_CARDS } from './cards';
-import { Action, canShake, currentScore, Frame, GameState, gukjinOptions, legalActions, Mission, missionDone, PIBAK_LIMIT, PlayerIndex, settle, step, WIN_SCORE } from './game';
+import { Action, canShake, currentScore, Frame, GameState, gukjinOptions, legalActions, Mission, missionBlocked, missionDone, missionHeld, PIBAK_LIMIT, PlayerIndex, settle, step, WIN_SCORE } from './game';
 import { BALANCED, Persona } from './personality';
 import { comboProgress, maxPiCount, score } from './scoring';
 
@@ -30,11 +30,11 @@ export function potential(mine: number[], theirs: number[], persona: Persona = B
   return v;
 }
 
-/** 미션 진행 가치. 상대가 미션 패를 한 장이라도 가졌으면 막힌 것으로 본다 */
+/** 미션 진행 가치. 상대가 미션 패(쌍이면 두 장 모두)를 가졌으면 막힌 것으로 본다 */
 function missionWorth(m: Mission | null, mine: number[], theirs: number[]): number {
-  if (!m || m.cards.some((id) => theirs.includes(id))) return 0;
+  if (!m || missionBlocked(m, theirs)) return 0;
   const reward = m.op === 'mul' ? (m.value - 1) * 2.5 : m.value * 0.6;
-  return (reward * m.cards.filter((id) => mine.includes(id)).length) / m.cards.length;
+  return (reward * m.cards.filter((id) => missionHeld(id, mine)).length) / m.cards.length;
 }
 
 /** 획득 패의 가치에 미션 진행 가치를 더한 값 */

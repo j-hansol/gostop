@@ -173,14 +173,30 @@ export const MISSION_CHANCE = 0.3;
 export function drawMission(rng: Rng): Mission | null {
   if (rng() >= MISSION_CHANCE) return null;
   const pool = Array.from({ length: TOTAL_CARDS }, (_, i) => i).filter((id) => !isBonus(id));
-  const cards = shuffle(pool, rng).slice(0, rng() < 0.5 ? 2 : 3);
+  const count = rng() < 0.5 ? 2 : 3;
+  // 같은 쌍의 피는 한 장으로 치므로 한 미션에 함께 넣지 않는다
+  const cards: number[] = [];
+  for (const id of shuffle(pool, rng)) {
+    if (cards.length < count && !cards.some((c) => missionGroup(c).includes(id))) cards.push(id);
+  }
   return rng() < 0.5
     ? { cards, op: 'add', value: 1 + Math.floor(rng() * 5) }
     : { cards, op: 'mul', value: 2 + Math.floor(rng() * 4) };
 }
 
 export const missionLabel = (m: Mission): string => `${m.op === 'add' ? '+' : 'x'} ${m.value}`;
-export const missionDone = (m: Mission, captured: number[]): boolean => m.cards.every((id) => captured.includes(id));
+/** 미션에서 같은 패로 치는 패들. 1~11월의 일반 피는 그림이 비슷한 2장이 한 쌍이다 */
+export function missionGroup(id: number): number[] {
+  const isPlainPi = (c: number) => card(c).kind === 'pi' && card(c).piValue === 1;
+  if (!isPlainPi(id)) return [id];
+  return Array.from({ length: TOTAL_CARDS }, (_, i) => i).filter((c) => isPlainPi(c) && monthOf(c) === monthOf(id));
+}
+export const missionHeld = (id: number, captured: number[]): boolean => missionGroup(id).some((c) => captured.includes(c));
+export const missionDone = (m: Mission, captured: number[]): boolean => m.cards.every((id) => missionHeld(id, captured));
+/** 쌍을 포함해 미션 패가 한 장도 남지 않게 captured가 가져갔는지 */
+export const missionBlocked = (m: Mission, captured: number[]): boolean => m.cards.some((id) => missionGroup(id).every((c) => captured.includes(c)));
+/** 쌍까지 펼친 미션 패 전체 */
+export const missionCards = (m: Mission): number[] => m.cards.flatMap(missionGroup);
 
 export function newRound(opts: NewRoundOptions): Frame[] {
   const rng = opts.rng ?? Math.random;

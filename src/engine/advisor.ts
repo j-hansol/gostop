@@ -5,7 +5,7 @@
 import { card, isBonus, monthOf, TOTAL_CARDS } from './cards';
 import { chooseAction, decideGoStop, decideGukjin, evaluate, potential, worth } from './ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, gukjinOptions, legalActions, Mission, missionDone, missionLabel, PlayerIndex, PlayerState, Rng, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, gukjinOptions, legalActions, Mission, missionBlocked, missionDone, missionHeld, missionLabel, PlayerIndex, PlayerState, Rng, step, WIN_SCORE,
 } from './game';
 import { comboProgress, maxPiCount, score } from './scoring';
 import { FIRST_PPEOK_POINTS } from './economy';
@@ -411,9 +411,9 @@ function describe(v: PublicView, action: Action, st: Stats, others: Stats[], wor
     const before = comboProgress(mine, theirs).filter((c) => c.state === 'done').map((c) => c.key);
     const done = comboProgress([...mine, ...take], theirs).filter((c) => c.state === 'done' && !before.includes(c.key));
     for (const c of done) parts.unshift(`${c.label} 완성`);
-    // 상대가 미션 패를 이미 가졌으면 막힌 미션이라 적지 않는다
+    // 막힌 미션이거나 쌍의 다른 한 장을 이미 가졌으면 새로 얻는 것이 없어 적지 않는다
     const m = v.mission;
-    if (m && take.some((id) => m.cards.includes(id)) && !m.cards.some((id) => theirs.includes(id))) {
+    if (m && !missionBlocked(m, theirs) && m.cards.some((id) => !missionHeld(id, mine) && missionHeld(id, take))) {
       parts.unshift(missionDone(m, [...mine, ...take]) ? `미션 완성 (${missionLabel(m)})` : '미션 패 획득');
     }
     if (!done.length && parts.length < 2) {

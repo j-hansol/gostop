@@ -381,6 +381,18 @@ button:disabled { opacity: 0.5; cursor: default; }
 .m-card.me .card { box-shadow: 0 0 0 2px var(--gold); }
 .m-card.opp { color: #ff8f8f; }
 .m-card.opp .card { box-shadow: 0 0 0 2px #ff6b6b; opacity: 0.75; }
+/* 둘 중 한 장이면 되는 피: 뒤에 한 장이 더 겹친 모양 */
+.card.twin { z-index: 0; }
+.card.twin::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  translate: 3px 3px;
+  z-index: -1;
+  border-radius: inherit;
+  background: #fbf6ea;
+  border: 1px solid var(--red);
+}
 .mission-top { display: none; }
 /* 실제 패에 붙는 미션 표식 */
 .m-flag {

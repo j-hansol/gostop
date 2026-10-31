@@ -1,7 +1,7 @@
 import { card, isBonus, monthOf } from '../engine/cards';
 import { chooseAction } from '../engine/ai';
 import {
-  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, Mission, missionDone, missionLabel, newRound, PIBAK_LIMIT, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
+  Action, canBomb, canShake, currentScore, Frame, GameEvent, GameState, goAdjusted, GUKJIN, gukjinOptions, Mission, missionCards, missionDone, missionGroup, missionHeld, missionLabel, newRound, PIBAK_LIMIT, PlayerIndex, playerScore, RoundResult, step, WIN_SCORE,
 } from '../engine/game';
 import { COMBO_LABEL, comboProgress, maxPiCount } from '../engine/scoring';
 import {
@@ -260,7 +260,8 @@ export class App {
       await this.playFrames(frames, myGen);
       if (this.mission && this.state!.phase !== 'end') {
         sfx.special();
-        this.banner(`미션 ${missionLabel(this.mission)}`, 'mid', this.mission.cards, 'small mission-banner', '모두 가져가서 이기면 최종 점수에 적용');
+        const twin = this.mission.cards.some((id) => missionGroup(id).length > 1);
+        this.banner(`미션 ${missionLabel(this.mission)}`, 'mid', this.mission.cards, 'small mission-banner', `모두 가져가서 이기면 최종 점수에 적용${twin ? ' · 겹친 피는 둘 중 한 장' : ''}`);
         await this.wait(1700, myGen);
       }
       const dealer = this.state!.dealer;
@@ -565,7 +566,7 @@ export class App {
     const b = document.createElement('div');
     b.className = `banner ${side === 'mid' ? '' : side} ${variant ?? ''}`;
     if (variant?.includes('small')) b.style.fontSize = 'clamp(28px, 5vw, 56px)';
-    b.innerHTML = text + (sub ? `<span class="sub">${sub}</span>` : '') + (cards?.length ? this.cardRow(cards) : '');
+    b.innerHTML = text + (sub ? `<span class="sub">${sub}</span>` : '') + (cards?.length ? this.cardRow(cards, variant?.includes('mission-banner')) : '');
     $('fx').appendChild(b);
     setTimeout(() => b.remove(), cards?.length ? 1600 : 1000);
     if (cards?.length) b.style.animationDuration = '1.5s';
@@ -590,8 +591,10 @@ export class App {
     a.classList.add('shake-screen');
   }
 
-  private cardRow(ids: number[]): string {
-    return `<div class="cards">${ids.map((id) => `<div class="card">${cardSvg(id)}</div>`).join('')}</div>`;
+  /** markTwins: 쌍이 있는 미션 피는 두 장이 겹친 모양으로 그린다 */
+  private cardRow(ids: number[], markTwins = false): string {
+    const cls = (id: number) => (markTwins && missionGroup(id).length > 1 ? 'card twin' : 'card');
+    return `<div class="cards">${ids.map((id) => `<div class="${cls(id)}">${cardSvg(id)}</div>`).join('')}</div>`;
   }
 
   // ───────────────────────── 렌더링 (FLIP 애니메이션) ─────────────────────────
@@ -612,7 +615,7 @@ export class App {
     this.faces.set(key, face);
     const id = Number(key.slice(1));
     // 뒷면에는 표식을 붙이지 않는다 (상대 손패와 더미가 드러나면 안 된다)
-    const flag = face === 'up' && this.mission?.cards.includes(id) ? '<span class="m-flag">★</span>' : '';
+    const flag = face === 'up' && this.mission && missionCards(this.mission).includes(id) ? '<span class="m-flag">★</span>' : '';
     el.innerHTML = face === 'dummy' ? dummySvg() : face === 'down' ? backSvg() : cardSvg(id) + flag;
     el.title = face === 'up' ? card(id).name + (card(id).month ? ` (${card(id).month}월)` : '') : '';
   }
@@ -798,8 +801,10 @@ export class App {
   private renderMission(s: GameState) {
     const m = s.mission;
     const cards = m?.cards.map((id) => {
-      const owner = s.players[0].captured.includes(id) ? 'me' : s.players[1].captured.includes(id) ? 'opp' : '';
-      return `<div class="m-card ${owner}"><div class="card">${cardSvg(id)}</div><span>${owner === 'me' ? '나' : owner === 'opp' ? '상대' : '&nbsp;'}</span></div>`;
+      // 쌍은 상대가 두 장을 모두 가져야 막힌다. 한 장만 가졌으면 나는 아직 남은 한 장으로 완료할 수 있다
+      const owner = missionHeld(id, s.players[0].captured) ? 'me' : missionGroup(id).every((c) => s.players[1].captured.includes(c)) ? 'opp' : '';
+      const twin = missionGroup(id).length > 1;
+      return `<div class="m-card ${owner}"><div class="card${twin ? ' twin' : ''}">${cardSvg(id)}</div><span>${owner === 'me' ? '나' : owner === 'opp' ? '상대' : twin ? '둘 중 1' : '&nbsp;'}</span></div>`;
     }).join('') ?? '';
     const html = m ? `<div class="m-head"><span class="m-title">미션</span><span class="m-value">${missionLabel(m)}</span></div><div class="m-cards">${cards}</div>` : '';
     const done = !!m && (missionDone(m, s.players[0].captured) || missionDone(m, s.players[1].captured));
@@ -817,9 +822,10 @@ export class App {
     if (!s?.mission || !$('modal').classList.contains('hidden')) return;
     await this.dialog(
       `미션 ${missionLabel(s.mission)}`,
-      `<div class="mission-pick">${this.cardRow(s.mission.cards)}</div>` +
+      `<div class="mission-pick">${this.cardRow(missionCards(s.mission))}</div>` +
         `<p style="text-align:center">이 패를 모두 가진 채 이기면 최종 점수에 <b>${missionLabel(s.mission)}</b> 적용합니다.<br>` +
-        `<small>판이 끝날 때 가지고 있는 패로 판정합니다. 상대가 먼저 가져가면 막힙니다.</small></p>`,
+        (s.mission.cards.some((id) => missionGroup(id).length > 1) ? `<b>같은 월의 피는 둘 중 한 장만 있으면 됩니다.</b><br>` : '') +
+        `<small>판이 끝날 때 가지고 있는 패로 판정합니다. 상대가 먼저 모두 가져가면 막힙니다.</small></p>`,
       [{ label: '닫기', value: 'ok' }],
     );
   }
@@ -921,6 +927,7 @@ export class App {
         <li>피박·광박·멍박·고박: 각 ×2</li></ul>
         <h3>획득 미션</h3><ul><li>판마다 30% 확률로 발생하며, 보너스패를 뺀 패 2~3장과 보상(+ 1~5 또는 x 2~5)을 판 시작 때 보여 줍니다.</li>
         <li>미션 패를 모두 가진 채 이기면 모든 배수를 계산한 최종 점수에 보상을 적용합니다. 고/스톱 기준 점수에는 영향이 없습니다.</li>
+        <li>1~11월의 일반 피는 같은 월 2장 중 한 장만 있어도 인정합니다.</li>
         <li>판정은 판이 끝날 때 가진 패로 합니다. 패자가 완료한 미션과 총통·삼연뻑 승리에는 적용하지 않습니다.</li></ul>
         <h3>상대 성격</h3><ul>${AI_PERSONAS.map((p) => `<li><b>${p.label}</b>: ${p.desc}</li>`).join('')}</ul>
         <h3>금액</h3><ul><li>점당 금액 = (레벨÷5의 몫 + 1) × 100원</li>
