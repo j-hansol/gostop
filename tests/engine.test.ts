@@ -129,7 +129,7 @@ describe('획득 미션', () => {
     return s;
   }
 
-  it('발생 확률은 약 30%, 패와 보상은 정해진 범위', () => {
+  it('발생 확률은 약 70%, 패와 보상은 정해진 범위', () => {
     const rng = seeded(11);
     let n = 0;
     const N = 20000;
@@ -143,8 +143,8 @@ describe('획득 미션', () => {
       if (m.op === 'add') expect(m.value >= 1 && m.value <= 5).toBe(true);
       else expect(m.value >= 2 && m.value <= 5).toBe(true);
     }
-    expect(n / N).toBeGreaterThan(0.28);
-    expect(n / N).toBeLessThan(0.32);
+    expect(n / N).toBeGreaterThan(0.68);
+    expect(n / N).toBeLessThan(0.72);
   });
 
   it('표시 형식', () => {

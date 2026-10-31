@@ -167,9 +167,9 @@ export interface NewRoundOptions {
   mission?: Mission | null;
 }
 
-export const MISSION_CHANCE = 0.3;
+export const MISSION_CHANCE = 0.7;
 
-/** 판마다 30% 확률로 미션을 만든다. 보너스패를 뺀 패 2~3장, 더하기 1~5 또는 곱하기 2~5 */
+/** 판마다 70% 확률로 미션을 만든다. 보너스패를 뺀 패 2~3장, 더하기 1~5 또는 곱하기 2~5 */
 export function drawMission(rng: Rng): Mission | null {
   if (rng() >= MISSION_CHANCE) return null;
   const pool = Array.from({ length: TOTAL_CARDS }, (_, i) => i).filter((id) => !isBonus(id));
