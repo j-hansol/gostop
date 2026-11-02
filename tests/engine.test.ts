@@ -4,7 +4,7 @@ import { score } from '../src/engine/scoring';
 import { Action, cardLocations, currentScore, drawMission, Frame, GameState, goAdjusted, legalActions, Mission, missionBlocked, missionDone, missionGroup, missionLabel, newRound, PlayerIndex, settle, step } from '../src/engine/game';
 import { bestFloorChoice, chooseAction, decideGoStop, worth } from '../src/engine/ai';
 import { publicView, recommend } from '../src/engine/advisor';
-import { applyResult, createAi, loadProfile, newProfile, pointRate } from '../src/engine/economy';
+import { applyResult, createAi, loadProfile, MAX_AI_MONEY, MAX_POINT_RATE, newProfile, rollRateMultiplier } from '../src/engine/economy';
 import { AI_PERSONAS, BALANCED, personalityFromName, personaOf } from '../src/engine/personality';
 
 function seeded(seed: number) {
@@ -363,27 +363,61 @@ describe('AI 성격', () => {
 });
 
 describe('economy', () => {
-  it('점수당 금액', () => {
-    expect(pointRate(1)).toBe(100);
-    expect(pointRate(4)).toBe(100);
-    expect(pointRate(5)).toBe(200);
-    expect(pointRate(9)).toBe(200);
-    expect(pointRate(10)).toBe(300);
-    expect(pointRate(25)).toBe(600);
+  it('점수당 금액: 100원에서 시작하고 레벨업 때 1~5배 중 하나가 된다', () => {
+    expect(newProfile(seeded(3)).pointRate).toBe(100);
+    expect(rollRateMultiplier(() => 0)).toBe(1);
+    expect(rollRateMultiplier(() => 0.999)).toBe(5);
+    const rng = seeded(7);
+    const seen = new Set<number>();
+    for (let i = 0; i < 500; i++) seen.add(rollRateMultiplier(rng));
+    expect([...seen].sort()).toEqual([1, 2, 3, 4, 5]);
   });
-  it('AI 파산 → 레벨업, 새 AI는 이전 생성 금액의 0~40% 증액', () => {
+  it('AI 파산 → 레벨업, 점당 금액은 직전 금액의 배수이고 새 AI 금액도 같은 배수로 오른다', () => {
     const p = newProfile(seeded(3));
+    p.pointRate = 300;
     p.ai.money = 500;
+    p.ai.initialMoney = 60000;
     const { profile, settlement } = applyResult(p, 0, 10, seeded(5));
     expect(settlement.paid).toBe(500);
     expect(settlement.aiBankrupt).toBe(true);
     expect(profile.level).toBe(2);
     expect(profile.playerMoney).toBe(50500);
-    expect(profile.ai.money).toBeGreaterThanOrEqual(50000);
-    expect(profile.ai.money).toBeLessThanOrEqual(70000);
+    const m = settlement.rateMultiplier!;
+    expect(m).toBeGreaterThanOrEqual(1);
+    expect(m).toBeLessThanOrEqual(5);
+    expect(settlement.rate).toBe(300);
+    expect(settlement.rateAfter).toBe(300 * m);
+    expect(profile.pointRate).toBe(300 * m);
+    expect(profile.ai.money).toBeGreaterThanOrEqual(60000 * m);
+    expect(profile.ai.money).toBeLessThanOrEqual(84000 * m);
     expect(profile.ai.money % 100).toBe(0);
-    const a2 = createAi(profile.ai, () => 0.999);
-    expect(a2.money).toBeLessThanOrEqual(Math.round(profile.ai.initialMoney * 1.4 / 100) * 100);
+    expect(profile.ai.initialMoney).toBe(profile.ai.money);
+  });
+  it('레벨이 오르지 않으면 점당 금액은 그대로이고, 판 금액은 저장된 점당 금액으로 계산한다', () => {
+    const p = newProfile(seeded(3));
+    p.level = 3;
+    p.pointRate = 1500;
+    const { profile, settlement } = applyResult(p, 0, 2, seeded(5));
+    expect(settlement.amount).toBe(3000);
+    expect(settlement.rateAfter).toBe(1500);
+    expect(settlement.rateMultiplier).toBeUndefined();
+    expect(profile.pointRate).toBe(1500);
+  });
+  it('점당 금액과 AI 금액은 상한을 넘지 않는다', () => {
+    const p = newProfile(seeded(3));
+    p.pointRate = MAX_POINT_RATE;
+    p.ai.money = 1;
+    p.ai.initialMoney = MAX_AI_MONEY;
+    const { profile } = applyResult(p, 0, 7, () => 0.999);
+    expect(profile.pointRate).toBe(MAX_POINT_RATE);
+    expect(profile.ai.money).toBe(MAX_AI_MONEY);
+  });
+  it('저장: 점당 금액이 없던 데이터는 예전 공식으로 채우고, 있으면 그대로 쓴다', () => {
+    const store = (level: number, rate?: number) => ({ getItem: () => JSON.stringify({ ...newProfile(seeded(3)), level, pointRate: rate }) }) as unknown as Storage;
+    expect(loadProfile(store(1))!.pointRate).toBe(100);
+    expect(loadProfile(store(5))!.pointRate).toBe(200);
+    expect(loadProfile(store(25))!.pointRate).toBe(600);
+    expect(loadProfile(store(5, 4800))!.pointRate).toBe(4800);
   });
   it('나가리 누적', () => {
     let p = newProfile(seeded(3));
@@ -487,7 +521,7 @@ describe('뻑 규칙', () => {
     const { payBonus, FIRST_PPEOK_POINTS } = await import('../src/engine/economy');
     const p = newProfile(seeded(3));
     const r = payBonus(p, 0, FIRST_PPEOK_POINTS);
-    expect(r.amount).toBe(7 * pointRate(1));
+    expect(r.amount).toBe(7 * p.pointRate);
     expect(r.profile.playerMoney).toBe(p.playerMoney + 700);
     expect(r.profile.ai.money).toBe(p.ai.money - 700);
     const poor = { ...r.profile, ai: { ...r.profile.ai, money: 300 } };

@@ -5,7 +5,7 @@ import {
 } from '../engine/game';
 import { COMBO_LABEL, comboProgress, maxPiCount } from '../engine/scoring';
 import {
-  applyResult, FIRST_PPEOK_POINTS, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, payBonus, pointRate, Profile, saveProfile, Settlement,
+  applyResult, FIRST_PPEOK_POINTS, FORFEIT_POINTS, loadProfile, nagariMultiplier, newProfile, payBonus, Profile, saveProfile, Settlement,
 } from '../engine/economy';
 import { backSvg, cardSvg, dummySvg, preloadCards } from './cardArt';
 import { actionLabel, Advice, adviseGoStop, adviseGukjin, publicView, recommend } from '../engine/advisor';
@@ -102,7 +102,7 @@ export class App {
     const body =
       `<p style="text-align:center">AI와 1:1로 즐기는 고스톱</p>` +
       `<table class="breakdown">` +
-      `<tr><td>레벨</td><td>Lv.${p.level} (점당 ${won(pointRate(p.level))})</td></tr>` +
+      `<tr><td>레벨</td><td>Lv.${p.level} (점당 ${won(p.pointRate)})</td></tr>` +
       `<tr><td>내 보유금</td><td>${won(p.playerMoney)}</td></tr>` +
       `<tr><td>상대</td><td>${p.ai.name} · ${won(p.ai.money)}</td></tr>` +
       `<tr><td>상대 성격</td><td>${personaOf(p.ai.personality).label}</td></tr>` +
@@ -442,7 +442,7 @@ export class App {
           `<tr><td>성격</td><td>${personaOf(settlement.newAi.personality).label}</td></tr>` +
           `<tr><td colspan="2">${personaOf(settlement.newAi.personality).desc}</td></tr>` +
           `<tr><td>상대 보유금</td><td>${won(settlement.newAi.money)}</td></tr>` +
-          `<tr><td>점당 금액</td><td>${won(pointRate(settlement.levelAfter))}</td></tr></table>`,
+          `<tr><td>점당 금액 (×${settlement.rateMultiplier})</td><td>${won(settlement.rate)} → ${won(settlement.rateAfter)}</td></tr></table>`,
         [{ label: '새 상대와 대결', value: 'ok' }],
       );
       if (myGen !== this.gen) return;
@@ -834,7 +834,7 @@ export class App {
     const p = this.profile;
     $('meta').innerHTML =
       `<span>Lv.<b>${p.level}</b></span>` +
-      `<span>점당 <b>${won(pointRate(p.level))}</b></span>` +
+      `<span>점당 <b>${won(p.pointRate)}</b></span>` +
       `<span>전적 <b>${p.stats.wins}승 ${p.stats.losses}패 ${p.stats.draws}무</b></span>` +
       (p.nagariStreak ? `<span class="nagari">나가리 ×${nagariMultiplier(p.nagariStreak)}</span>` : '');
   }
@@ -930,8 +930,9 @@ export class App {
         <li>1~11월의 일반 피는 같은 월 2장 중 한 장만 있어도 인정합니다.</li>
         <li>판정은 판이 끝날 때 가진 패로 합니다. 패자가 완료한 미션과 총통·삼연뻑 승리에는 적용하지 않습니다.</li></ul>
         <h3>상대 성격</h3><ul>${AI_PERSONAS.map((p) => `<li><b>${p.label}</b>: ${p.desc}</li>`).join('')}</ul>
-        <h3>금액</h3><ul><li>점당 금액 = (레벨÷5의 몫 + 1) × 100원</li>
-        <li>AI가 파산하면 레벨 업, 새 AI는 이전 AI 시작 금액의 0~40% 증액</li>
+        <h3>금액</h3><ul><li>점당 금액은 100원에서 시작</li>
+        <li>AI가 파산하면 레벨 업, 점당 금액은 1~5배 중 무작위로 오름</li>
+        <li>새 AI의 시작 금액 = 이전 AI 시작 금액 × 같은 배수 × 1~1.4</li>
         <li>내가 파산하면 처음부터 다시 시작</li></ul></div>`,
       [{ label: '닫기', value: 'ok' }],
     );

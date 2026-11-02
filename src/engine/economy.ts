@@ -6,6 +6,10 @@ export const FORFEIT_POINTS = 7;
 /** 각자의 첫 턴에 뻑이 나면 상대에게서 받는 점수 */
 export const FIRST_PPEOK_POINTS = 7;
 export const SAVE_KEY = 'gostop-save-v1';
+export const INITIAL_POINT_RATE = 100;
+/** 지급액 계산이 안전한 정수 범위를 넘지 않게 하는 상한 */
+export const MAX_POINT_RATE = 1e12;
+export const MAX_AI_MONEY = 1e15;
 
 export interface AiProfile {
   name: string;
@@ -18,6 +22,8 @@ export interface Profile {
   version: 1;
   playerMoney: number;
   level: number;
+  /** 지금 레벨의 점당 금액. 레벨이 오를 때 무작위 배수로 정해지므로 저장한다 */
+  pointRate: number;
   ai: AiProfile;
   /** 다음 판 선 (0: 나, 1: AI) */
   dealer: PlayerIndex;
@@ -26,13 +32,17 @@ export interface Profile {
   stats: { wins: number; losses: number; draws: number };
 }
 
-export const pointRate = (level: number): number => (Math.floor(level / 5) + 1) * 100;
+/** 레벨이 오를 때 점당 금액에 곱하는 배수. 1~5 중 하나 */
+export const rollRateMultiplier = (rng: () => number = Math.random): number => 1 + Math.floor(rng() * 5);
+/** 점당 금액이 없던 저장 데이터에 쓰는 예전 공식 */
+const legacyPointRate = (level: number): number => (Math.floor(level / 5) + 1) * 100;
 export const nagariMultiplier = (streak: number): number => 2 ** streak;
 
 const NOUN = ['곰', '여우', '너구리', '호랑이', '두꺼비', '부엉이', '고양이', '거북이', '까치', '수달', '오소리', '독수리'];
 
-export function createAi(prev: AiProfile | null, rng: () => number = Math.random): AiProfile {
-  const money = prev ? Math.round((prev.initialMoney * (1 + rng() * 0.4)) / 100) * 100 : INITIAL_MONEY;
+/** rateMultiplier: 점당 금액이 오른 배수. 판돈과 AI 보유금의 비율이 유지되도록 보유금에도 곱한다 */
+export function createAi(prev: AiProfile | null, rng: () => number = Math.random, rateMultiplier = 1): AiProfile {
+  const money = prev ? Math.min(MAX_AI_MONEY, Math.round((prev.initialMoney * rateMultiplier * (1 + rng() * 0.4)) / 100) * 100) : INITIAL_MONEY;
   // 직전 AI와 다른 성격을 고르고, 이름의 형용사는 그 성격에 맞춘다
   const pool = AI_PERSONAS.filter((p) => p.id !== prev?.personality);
   const persona = pool[Math.floor(rng() * pool.length)];
@@ -45,6 +55,7 @@ export function newProfile(rng: () => number = Math.random): Profile {
     version: 1,
     playerMoney: INITIAL_MONEY,
     level: 1,
+    pointRate: INITIAL_POINT_RATE,
     ai: createAi(null, rng),
     dealer: rng() < 0.5 ? 0 : 1,
     nagariStreak: 0,
@@ -66,6 +77,9 @@ export interface Settlement {
   oldAi: AiProfile;
   levelBefore: number;
   levelAfter: number;
+  /** AI 파산으로 레벨이 올랐을 때 뽑은 배수 */
+  rateMultiplier?: number;
+  rateAfter: number;
 }
 
 /** 판 결과를 프로필에 반영한다. 원본은 바꾸지 않는다. */
@@ -85,7 +99,7 @@ function transfer(p: Profile, to: PlayerIndex, amount: number): number {
 /** 판 도중 정산 (첫뻑). 파산 처리는 판이 끝날 때 applyResult에서 한다 */
 export function payBonus(p: Profile, to: PlayerIndex, points: number): { profile: Profile; amount: number; paid: number } {
   const next: Profile = structuredClone(p);
-  const amount = points * pointRate(p.level);
+  const amount = points * p.pointRate;
   const paid = transfer(next, to, amount);
   return { profile: next, amount, paid };
 }
@@ -93,10 +107,10 @@ export function payBonus(p: Profile, to: PlayerIndex, points: number): { profile
 export function applyResult(p: Profile, winner: PlayerIndex | null, points: number, rng: () => number = Math.random): { profile: Profile; settlement: Settlement } {
   const next: Profile = structuredClone(p);
   next.inProgress = false;
-  const rate = pointRate(p.level);
+  const rate = p.pointRate;
   const base: Settlement = {
     winner, points, rate, amount: 0, paid: 0, aiBankrupt: false, playerBankrupt: false,
-    oldAi: { ...p.ai }, levelBefore: p.level, levelAfter: p.level,
+    oldAi: { ...p.ai }, levelBefore: p.level, levelAfter: p.level, rateAfter: rate,
   };
   let settlement: Settlement = base;
   if (winner === null) {
@@ -115,9 +129,13 @@ export function applyResult(p: Profile, winner: PlayerIndex | null, points: numb
   if (next.ai.money <= 0) {
     settlement.aiBankrupt = true;
     next.level++;
-    next.ai = createAi(p.ai, rng);
+    const multiplier = rollRateMultiplier(rng);
+    next.pointRate = Math.min(MAX_POINT_RATE, rate * multiplier);
+    next.ai = createAi(p.ai, rng, next.pointRate / rate);
     settlement.newAi = { ...next.ai };
     settlement.levelAfter = next.level;
+    settlement.rateMultiplier = multiplier;
+    settlement.rateAfter = next.pointRate;
   }
   if (next.playerMoney <= 0) {
     settlement.playerBankrupt = true;
@@ -132,6 +150,7 @@ export function loadProfile(storage: Storage | undefined): Profile | null {
     const p = JSON.parse(raw) as Profile;
     if (p?.version !== 1 || typeof p.playerMoney !== 'number' || !p.ai) return null;
     p.ai.personality ??= personalityFromName(p.ai.name);
+    p.pointRate ??= legacyPointRate(p.level);
     return p;
   } catch {
     return null;
