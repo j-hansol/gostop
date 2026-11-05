@@ -62,10 +62,11 @@ Electron으로 빌드 결과(`dist/`)를 창 하나짜리 앱으로 감쌉니다
 
 ```bash
 npm run app        # 빌드 후 앱 창으로 바로 실행
-npm run dist:win   # release/ 에 설치 파일(Matgo-<버전>-win-x64.exe)과 포터블 실행 파일(Matgo-<버전>-portable.exe) 생성
+npm run dist:win   # release/ 에 설치 파일(Matgo-<버전>-win-x64.exe)과 설치 없이 쓰는 압축 파일(Matgo-<버전>-win-x64.zip) 생성
 npm run dist:mac   # release/ 에 Matgo-<버전>-mac-universal.dmg 생성 (Mac에서 실행해야 함)
 ```
 
+- ZIP은 원하는 폴더에 한 번 풀어 두고 안의 `Matgo.exe`를 실행합니다. 실행할 때마다 압축을 푸는 단일 포터블 exe는 시작에 10초 이상 걸려서 쓰지 않습니다.
 - 코드 서명을 하지 않았으므로 Windows는 첫 실행 때 SmartScreen 경고에서 **추가 정보 → 실행**을, Mac은 **우클릭 → 열기**(또는 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기)를 눌러야 합니다.
 - 저장 데이터(레벨·보유금)는 앱 전용 저장소에 따로 남으며, 브라우저에서 하던 진행 상황과는 공유되지 않습니다.
 

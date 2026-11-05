@@ -50,16 +50,13 @@
           ]
         },
         {
-          "target": "portable",
+          "target": "zip",
           "arch": [
             "x64"
           ]
         }
       ],
       "executableName": "Matgo"
-    },
-    "portable": {
-      "artifactName": "Matgo-${version}-portable.${ext}"
     },
     "nsis": {
       "oneClick": false,
