@@ -11,11 +11,71 @@
     "test": "vitest run",
     "sim": "vite-node tests/sim.bench.ts",
     "bench:advice": "vite-node tests/advisor.bench.ts",
-    "bench:persona": "vite-node tests/persona.bench.ts"
+    "bench:persona": "vite-node tests/persona.bench.ts",
+    "app": "npm run build && electron .",
+    "app:icon": "electron tools/make-icon.cjs",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac"
   },
   "devDependencies": {
+    "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "typescript": "5.6.3",
     "vite": "5.4.11",
     "vitest": "2.1.8"
+  },
+  "description": "AI와 1:1로 즐기는 맞고 게임",
+  "author": "장성현",
+  "main": "electron/main.cjs",
+  "build": {
+    "appId": "com.gostop.matgo",
+    "productName": "맞고",
+    "artifactName": "Matgo-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/main.cjs",
+      "dist/**/*",
+      "!dist/blog-*.html",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "executableName": "Matgo"
+    },
+    "portable": {
+      "artifactName": "Matgo-${version}-portable.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "맞고"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.card-games"
+    }
   }
 }

@@ -56,6 +56,19 @@ npm run build:blog  # 블로그 글용 HTML 생성 (아래 참고)
 npm run bench:advice 300  # 추천대로 두는 나 vs AI 대전 비교
 ```
 
+## 데스크톱 앱 (Windows·Mac)
+
+Electron으로 빌드 결과(`dist/`)를 창 하나짜리 앱으로 감쌉니다. 진입점은 `electron/main.cjs`, 아이콘은 `build/icon.png`(`npm run app:icon`으로 다시 생성)입니다.
+
+```bash
+npm run app        # 빌드 후 앱 창으로 바로 실행
+npm run dist:win   # release/ 에 설치 파일(Matgo-<버전>-win-x64.exe)과 포터블 실행 파일(Matgo-<버전>-portable.exe) 생성
+npm run dist:mac   # release/ 에 Matgo-<버전>-mac-universal.dmg 생성 (Mac에서 실행해야 함)
+```
+
+- 코드 서명을 하지 않았으므로 Windows는 첫 실행 때 SmartScreen 경고에서 **추가 정보 → 실행**을, Mac은 **우클릭 → 열기**(또는 시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기)를 눌러야 합니다.
+- 저장 데이터(레벨·보유금)는 앱 전용 저장소에 따로 남으며, 브라우저에서 하던 진행 상황과는 공유되지 않습니다.
+
 ## 블로그에 올리기
 
 `npm run build:blog`를 실행하면 두 파일이 생깁니다.
